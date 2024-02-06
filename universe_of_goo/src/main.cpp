@@ -17,8 +17,8 @@
 bool running_;
 SimParameters params_;
 double time_;
-std::vector<Particle, Eigen::aligned_allocator<Particle> > particles_;
-std::vector<Connector*> connectors_;
+std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
+std::vector<Connector *> connectors_;
 std::vector<Saw> saws_;
 
 Eigen::MatrixXd renderQ;
@@ -37,7 +37,7 @@ std::deque<MouseClick> mouseClicks_;
 double getTotalParticleMass(int idx)
 {
     double mass = particles_[idx].mass;
-    for (std::vector<Connector*>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         if ((*it)->p1 == idx || (*it)->p2 == idx)
             mass += 0.5 * (*it)->mass;
@@ -45,13 +45,12 @@ double getTotalParticleMass(int idx)
     return mass;
 }
 
-
 void initSimulation()
 {
     time_ = 0;
     particles_.clear();
-    for (std::vector<Connector*>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-        delete* it;
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+        delete *it;
     connectors_.clear();
     saws_.clear();
 }
@@ -80,7 +79,6 @@ void updateRenderGeometry()
 
     double eps = 1e-4;
 
-
     if (params_.floorEnabled)
     {
         for (int i = 0; i < 6; i++)
@@ -101,8 +99,7 @@ void updateRenderGeometry()
         idx += 6;
     }
 
-
-    for (std::vector<Connector*>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         Eigen::Vector3d color;
         if ((*it)->associatedBendingStencils.empty())
@@ -153,14 +150,13 @@ void updateRenderGeometry()
             vertexColors.push_back(color);
         }
 
-
         verts.push_back(Eigen::Vector3d(particles_[i].pos[0], particles_[i].pos[1], 0));
 
         const double PI = 3.1415926535898;
         for (int j = 0; j <= numcirclewedges; j++)
         {
             verts.push_back(Eigen::Vector3d(particles_[i].pos[0] + radius * cos(2 * PI * j / numcirclewedges),
-                particles_[i].pos[1] + radius * sin(2 * PI * j / numcirclewedges), 0));
+                                            particles_[i].pos[1] + radius * sin(2 * PI * j / numcirclewedges), 0));
         }
 
         for (int j = 0; j <= numcirclewedges; j++)
@@ -191,7 +187,7 @@ void updateRenderGeometry()
         {
             double radius = (i % 2 == 0) ? innerradius : outerradius;
             verts.push_back(Eigen::Vector3d(it->pos[0] + radius * cos(2 * PI * i / spokes + sawangspeed * time_),
-                it->pos[1] + radius * sin(2 * PI * i / spokes + sawangspeed * time_), 0));
+                                            it->pos[1] + radius * sin(2 * PI * i / spokes + sawangspeed * time_), 0));
         }
 
         for (int j = 0; j <= spokes; j++)
@@ -224,9 +220,15 @@ void addParticle(double x, double y)
     int newid = particles_.size();
     particles_.push_back(Particle(newpos, mass, params_.particleFixed, false));
 
-    // TODO
     // Connect particles to nearby ones with springs
-    
+    for (int i = 0; i < newid; i++)
+    {
+        double dist = (particles_[i].pos - newpos).norm();
+        if (dist < params_.maxSpringDist)
+        {
+            connectors_.push_back(new Spring(i, newid, mass, params_.springStiffness, dist, true));
+        }
+    }
 }
 
 void addSaw(double x, double y)
@@ -234,27 +236,35 @@ void addSaw(double x, double y)
     saws_.push_back(Saw(Eigen::Vector2d(x, y), params_.sawRadius));
 }
 
-void buildConfiguration(Eigen::VectorXd& q, Eigen::VectorXd& qprev, Eigen::VectorXd& qdot)
+void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
 {
-    //TODO
-    // Pack the degrees of freedom and DOF velocities into global configuration vectors   
+    // TODO
+    //  Pack the degrees of freedom and DOF velocities into global configuration vectors
 }
 
-void unbuildConfiguration(const Eigen::VectorXd& q, const Eigen::VectorXd& qdot)
+void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
 {
     // TODO
     // Unpack the configurational position vectors back into the particles_ for rendering
 }
 
-void computeMassInverse(Eigen::SparseMatrix<double>& Minv)
+void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
 {
-    // TODO
+    // Minv is a diagonal matrix with the inverse mass of each particle on the diagonal
+    // Its size is 2 * particles_.size() x 2 * particles_.size()
+
     // Populate Minv with the inverse mass matrix
-    // Keep this matrix **sparse**!!
+    Minv.reserve(Eigen::VectorXi::Constant(particles_.size(), 1));
+    for (int i = 0; i < particles_.size(); i++)
+    {
+        Minv.insert(2 * i, 2 * i) = 1.0 / particles_[i].mass;
+        Minv.insert(2 * i + 1, 2 * i + 1) = 1.0 / particles_[i].mass;
+    }
+
+    Minv.makeCompressed();
 }
 
-
-void computeForceAndHessian(const Eigen::VectorXd& q, const Eigen::VectorXd& qprev, Eigen::VectorXd& F, Eigen::SparseMatrix<double>& H)
+void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
 {
     // TODO
     // Compute the total force and Hessian for all potentials in the system
@@ -262,21 +272,20 @@ void computeForceAndHessian(const Eigen::VectorXd& q, const Eigen::VectorXd& qpr
     // to toggle on and off individual force types.
 }
 
-void numericalIntegration(Eigen::VectorXd& q, Eigen::VectorXd& qprev, Eigen::VectorXd& qdot)
+void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
 {
     // TODO
     // Perform one step of time integration, using the method in params_.integrator
 }
 
-
 void deleteSawedObjects()
 {
     // TODO
-    // Delete particles and springs that touch a saw    
+    // Delete particles and springs that touch a saw
 }
 
 void pruneOverstrainedSprings()
-{   
+{
     // TODO
     // Delete springs that have too high strain
 }
@@ -294,7 +303,7 @@ bool simulateOneStep()
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
     deleteSawedObjects();
-    
+
     // Time advances
     time_ += params_.timeStep;
     return false;
@@ -319,12 +328,12 @@ void callback()
     }
     if (ImGui::CollapsingHeader("UI Options", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Combo("Click Adds", (int*)&params_.clickMode, "Particles\0Saws\0\0");
+        ImGui::Combo("Click Adds", (int *)&params_.clickMode, "Particles\0Saws\0\0");
     }
     if (ImGui::CollapsingHeader("Simulation Options"))
     {
         ImGui::InputDouble("Timestep", &params_.timeStep);
-        ImGui::Combo("Integrator", (int*)&params_.integrator, "Explicit Euler\0Implicit Euler\0Implicit Midpoint\0Velocity Verlet\0\0");
+        ImGui::Combo("Integrator", (int *)&params_.integrator, "Explicit Euler\0Implicit Euler\0Implicit Midpoint\0Velocity Verlet\0\0");
         ImGui::InputDouble("Newton Tolerance", &params_.NewtonTolerance);
         ImGui::InputInt("Newton Max Iters", &params_.NewtonMaxIters);
     }
@@ -338,7 +347,6 @@ void callback()
         ImGui::InputDouble("  Viscosity", &params_.dampingStiffness);
         ImGui::Checkbox("Floor Enabled", &params_.floorEnabled);
     }
-
 
     if (ImGui::CollapsingHeader("New Particles"))
     {
@@ -357,21 +365,22 @@ void callback()
         ImGui::InputDouble("Base Stiffness", &params_.springStiffness);
     }
 
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
     io.DisplayFramebufferScale = ImVec2(1, 1);
-    // this now only works on macs with retina displays - maybe funky on older macbook airs?
-    // more robust solution is documented here: https://github.com/ocornut/imgui/issues/5081
-    #if defined(__APPLE__)
-        io.DisplayFramebufferScale = ImVec2(2,2); 
-    #endif
+// this now only works on macs with retina displays - maybe funky on older macbook airs?
+// more robust solution is documented here: https://github.com/ocornut/imgui/issues/5081
+#if defined(__APPLE__)
+    io.DisplayFramebufferScale = ImVec2(2, 2);
+#endif
 
-    if (io.MouseClicked[0] && !io.WantCaptureMouse) { 
+    if (io.MouseClicked[0] && !io.WantCaptureMouse)
+    {
         MouseClick mc;
-        glm::vec2 screenCoords{ io.MousePos.x * io.DisplayFramebufferScale.x, io.MousePos.y * io.DisplayFramebufferScale.y};       
+        glm::vec2 screenCoords{io.MousePos.x * io.DisplayFramebufferScale.x, io.MousePos.y * io.DisplayFramebufferScale.y};
 
-        glm::mat4 proj = polyscope::view::getCameraPerspectiveMatrix();        
+        glm::mat4 proj = polyscope::view::getCameraPerspectiveMatrix();
 
-        glm::vec4 ndc{ -1.0f + 2.0f * screenCoords.x / (polyscope::view::bufferWidth  ) , 1.0f - 2.0f * screenCoords.y / (polyscope::view::bufferHeight ), 0, 1 };
+        glm::vec4 ndc{-1.0f + 2.0f * screenCoords.x / (polyscope::view::bufferWidth), 1.0f - 2.0f * screenCoords.y / (polyscope::view::bufferHeight), 0, 1};
         glm::vec4 camera = glm::inverse(proj) * ndc;
         mc.x = camera[0];
         mc.y = camera[1];
@@ -382,61 +391,59 @@ void callback()
     ImGui::End();
 }
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-  polyscope::view::setWindowSize(1600, 800);
-  polyscope::view::setWindowResizable(false);
-  polyscope::view::style = polyscope::view::NavigateStyle::Planar;
-  polyscope::view::projectionMode = polyscope::ProjectionMode::Orthographic;
-  polyscope::options::buildGui = false;
-  polyscope::options::openImGuiWindowForUserCallback = false;
-  
+    polyscope::view::setWindowSize(1600, 800);
+    polyscope::view::setWindowResizable(false);
+    polyscope::view::style = polyscope::view::NavigateStyle::Planar;
+    polyscope::view::projectionMode = polyscope::ProjectionMode::Orthographic;
+    polyscope::options::buildGui = false;
+    polyscope::options::openImGuiWindowForUserCallback = false;
 
-  polyscope::options::autocenterStructures = false;
-  polyscope::options::autoscaleStructures = false;
+    polyscope::options::autocenterStructures = false;
+    polyscope::options::autoscaleStructures = false;
 
-  initSimulation();
+    initSimulation();
 
-  polyscope::init();
+    polyscope::init();
 
-  polyscope::options::automaticallyComputeSceneExtents = false;
-  polyscope::state::lengthScale = 1.;
-  polyscope::state::boundingBox =
-      std::tuple<glm::vec3, glm::vec3>{ {-2., -1., -1.}, {2., 1., 1.} };
+    polyscope::options::automaticallyComputeSceneExtents = false;
+    polyscope::state::lengthScale = 1.;
+    polyscope::state::boundingBox =
+        std::tuple<glm::vec3, glm::vec3>{{-2., -1., -1.}, {2., 1., 1.}};
 
-  polyscope::state::userCallback = callback;
+    polyscope::state::userCallback = callback;
 
-  while (!polyscope::render::engine->windowRequestsClose())
-  {
-      if (running_)
-          simulateOneStep();
-      updateRenderGeometry();
-      auto * surf = polyscope::registerSurfaceMesh("UI", renderQ, renderF);
-      surf->setTransparency(0.9);
-      auto * color = surf->addVertexColorQuantity("Colors", renderC);
-      color->setEnabled(true);
+    while (!polyscope::render::engine->windowRequestsClose())
+    {
+        if (running_)
+            simulateOneStep();
+        updateRenderGeometry();
+        auto *surf = polyscope::registerSurfaceMesh("UI", renderQ, renderF);
+        surf->setTransparency(0.9);
+        auto *color = surf->addVertexColorQuantity("Colors", renderC);
+        color->setEnabled(true);
 
-      polyscope::frameTick();
-      while (!mouseClicks_.empty())
-      {
-          MouseClick mc = mouseClicks_.front();
-          mouseClicks_.pop_front();
-          switch (mc.mode)
-          {
-          case SimParameters::ClickMode::CM_ADDPARTICLE:
-          {
-              addParticle(mc.x, mc.y);
-              break;
-          }
-          case SimParameters::ClickMode::CM_ADDSAW:
-          {
-              addSaw(mc.x, mc.y);
-              break;
-          }
-          }
-      }
-  }
+        polyscope::frameTick();
+        while (!mouseClicks_.empty())
+        {
+            MouseClick mc = mouseClicks_.front();
+            mouseClicks_.pop_front();
+            switch (mc.mode)
+            {
+            case SimParameters::ClickMode::CM_ADDPARTICLE:
+            {
+                addParticle(mc.x, mc.y);
+                break;
+            }
+            case SimParameters::ClickMode::CM_ADDSAW:
+            {
+                addSaw(mc.x, mc.y);
+                break;
+            }
+            }
+        }
+    }
 
-  return 0;
+    return 0;
 }
-
