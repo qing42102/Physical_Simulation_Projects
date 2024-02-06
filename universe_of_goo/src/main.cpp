@@ -238,14 +238,33 @@ void addSaw(double x, double y)
 
 void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
 {
-    // TODO
+    q.resize(2 * particles_.size());
+    qprev.resize(2 * particles_.size());
+    qdot.resize(2 * particles_.size());
+
     //  Pack the degrees of freedom and DOF velocities into global configuration vectors
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        q(2 * i) = particles_[i].pos[0];
+        q(2 * i + 1) = particles_[i].pos[1];
+        qprev(2 * i) = particles_[i].prevpos[0];
+        qprev(2 * i + 1) = particles_[i].prevpos[1];
+        qdot(2 * i) = particles_[i].vel[0];
+        qdot(2 * i + 1) = particles_[i].vel[1];
+    }
 }
 
 void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
 {
-    // TODO
     // Unpack the configurational position vectors back into the particles_ for rendering
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        particles_[i].prevpos = particles_[i].pos;
+        particles_[i].pos[0] = q(2 * i);
+        particles_[i].pos[1] = q(2 * i + 1);
+        particles_[i].vel[0] = qdot(2 * i);
+        particles_[i].vel[1] = qdot(2 * i + 1);
+    }
 }
 
 void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
@@ -255,7 +274,7 @@ void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
 
     // Populate Minv with the inverse mass matrix
     Minv.reserve(Eigen::VectorXi::Constant(particles_.size(), 1));
-    for (int i = 0; i < particles_.size(); i++)
+    for (uint i = 0; i < particles_.size(); i++)
     {
         Minv.insert(2 * i, 2 * i) = 1.0 / particles_[i].mass;
         Minv.insert(2 * i + 1, 2 * i + 1) = 1.0 / particles_[i].mass;
