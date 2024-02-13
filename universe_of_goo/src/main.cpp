@@ -13,13 +13,14 @@
 
 #include "SimParameters.h"
 #include "SceneObjects.h"
+#include "numerical_ODE.cpp"
 
 bool running_;
-SimParameters params_;
+extern SimParameters params_;
 double time_;
-std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
-std::vector<Connector *> connectors_;
-std::vector<Saw> saws_;
+extern std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
+extern std::vector<Spring *> connectors_;
+extern std::vector<Saw> saws_;
 
 Eigen::MatrixXd renderQ;
 Eigen::MatrixXi renderF;
@@ -37,7 +38,7 @@ std::deque<MouseClick> mouseClicks_;
 double getTotalParticleMass(int idx)
 {
     double mass = particles_[idx].mass;
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         if ((*it)->p1 == idx || (*it)->p2 == idx)
             mass += 0.5 * (*it)->mass;
@@ -49,7 +50,7 @@ void initSimulation()
 {
     time_ = 0;
     particles_.clear();
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
         delete *it;
     connectors_.clear();
     saws_.clear();
@@ -99,7 +100,7 @@ void updateRenderGeometry()
         idx += 6;
     }
 
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         Eigen::Vector3d color;
         if ((*it)->associatedBendingStencils.empty())
@@ -265,36 +266,6 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
         particles_[i].vel[0] = qdot(2 * i);
         particles_[i].vel[1] = qdot(2 * i + 1);
     }
-}
-
-void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
-{
-    // Minv is a diagonal matrix with the inverse mass of each particle on the diagonal
-    // Its size is 2 * particles_.size() x 2 * particles_.size()
-
-    // Populate Minv with the inverse mass matrix
-    Minv.reserve(Eigen::VectorXi::Constant(particles_.size(), 1));
-    for (uint i = 0; i < particles_.size(); i++)
-    {
-        Minv.insert(2 * i, 2 * i) = 1.0 / particles_[i].mass;
-        Minv.insert(2 * i + 1, 2 * i + 1) = 1.0 / particles_[i].mass;
-    }
-
-    Minv.makeCompressed();
-}
-
-void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
-{
-    // TODO
-    // Compute the total force and Hessian for all potentials in the system
-    // This function should respect the booleans in params_ to allow the user
-    // to toggle on and off individual force types.
-}
-
-void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
-{
-    // TODO
-    // Perform one step of time integration, using the method in params_.integrator
 }
 
 void deleteSawedObjects()
