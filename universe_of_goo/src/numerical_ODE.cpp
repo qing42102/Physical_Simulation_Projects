@@ -1,4 +1,5 @@
 #include <iostream>
+#include <functional>
 
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
@@ -52,9 +53,9 @@ void compute_gravity_force(const Eigen::VectorXd &q, const Eigen::VectorXd &qpre
 /*
     Add the force due to spring to the force vector F
     Add the Hessian of the spring force to the Hessian matrix H
-    V = \sum_{ij} 0.5 * k_{ij} * (||p_i - p_j|| - L_{ij})^2
-    F = \sum_{ij} -k_{ij} * (||p_i - p_j|| - L_{ij}) * (p_i - p_j) / ||p_i - p_j||
-    H = \sum_{ij} k_{ij} * ((p_i - p_j) * (p_i - p_j)^T / ||p_i - p_j||^2 + (||p_i - p_j|| - L_{ij}) * (I / ||p_i - p_j|| - (p_i - p_j) * (p_i - p_j)^T / ||p_i - p_j||^3))
+    V = \sum_{ij} \frac{1}{2} k_{ij} (\Vert p_i - p_j \Vert - L_{ij})^2
+    F = \sum_{ij} -k_{ij} (\Vert p_i - p_j \Vert - L_{ij}) \frac{p_i - p_j}{\Vert p_i - p_j \Vert}
+    H = \sum_{ij} k_{ij} \left(\frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^2} + (\Vert p_i - p_j \Vert - L_{ij}) \left(\frac{\mathbf{I}}{\Vert p_i - p_j \Vert} - \frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^3} \right) \right)
 */
 void compute_spring_force(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
 {
@@ -103,6 +104,36 @@ void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qpr
     compute_spring_force(q, qprev, F, H);
 }
 
+Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> func,
+                              std::function<Eigen::SparseMatrix<double>(Eigen::VectorXd)> deriv_func,
+                              const Eigen::VectorXd &initial_guess)
+{
+    Eigen::VectorXd x = initial_guess;
+
+    for (int i = 0; i < params_.NewtonMaxIters; i++)
+    {
+        Eigen::VectorXd f_val = func(x);
+        if (f_val.norm() < params_.NewtonTolerance)
+        {
+            std::cout << "Newton's method converged in " << i << " iterations" << std::endl;
+            break;
+        }
+
+        Eigen::SparseMatrix<double> deriv_val = deriv_func(x);
+
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
+        solver.compute(deriv_val);
+        if (solver.info() != Eigen::Success)
+        {
+            std::cerr << "Decomposition failed" << std::endl;
+            exit(1);
+        }
+        x = solver.solve(x - f_val);
+    }
+
+    return x;
+}
+
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
 {
     Eigen::SparseMatrix<double> Minv(2 * particles_.size(), 2 * particles_.size());
@@ -111,30 +142,62 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
     Eigen::VectorXd F(2 * particles_.size());
     Eigen::SparseMatrix<double> H(2 * particles_.size(), 2 * particles_.size());
 
+    std::cout << "One step of integrator" << std::endl;
+
     // Perform one step of time integration, using the method in params_.integrator
     switch (params_.integrator)
     {
     case SimParameters::TI_EXPLICIT_EULER:
+    {
         computeForceAndHessian(q, qprev, F, H);
         qprev = q;
         q = q + params_.timeStep * Minv * qdot.transpose();
         qdot = qdot + params_.timeStep * F;
+    }
 
     case SimParameters::TI_IMPLICIT_EULER:
-        computeForceAndHessian(q, qprev, F, H);
+    {
         qprev = q;
-        q = q + params_.timeStep * Minv * qdot.transpose() + pow(params_.timeStep, 2) * Minv * F;
+        auto implicit_euler = [&](Eigen::VectorXd q)
+        {
+            computeForceAndHessian(q, qprev, F, H);
+            return q - qprev - params_.timeStep * Minv * (qdot.transpose() + params_.timeStep * F.transpose());
+        };
+
+        auto implicit_euler_deriv = [&](Eigen::VectorXd q)
+        {
+            computeForceAndHessian(q, qprev, F, H);
+            return Eigen::MatrixXd::Identity(q.size(), q.size()) - pow(params_.timeStep, 2) * Minv * H;
+        };
+
+        q = newton_method(implicit_euler, implicit_euler_deriv, q);
+    }
 
     case SimParameters::TI_IMPLICIT_MIDPOINT:
-        computeForceAndHessian(q, qprev, F, H);
+    {
         qprev = q;
-        // q = qprev + params_.timeStep * Minv * qdot.transpose();
+        auto implicit_midpoint = [&](Eigen::VectorXd q)
+        {
+            computeForceAndHessian((q + qprev) / 2, qprev, F, H);
+            return q - qprev - params_.timeStep * Minv * (2 * qdot.transpose() + params_.timeStep * F.transpose()) / 2;
+        };
+
+        auto implicit_midpoint_deriv = [&](Eigen::VectorXd q)
+        {
+            computeForceAndHessian((q + qprev) / 2, qprev, F, H);
+            return Eigen::MatrixXd::Identity(q.size(), q.size()) - 0.5 * pow(params_.timeStep, 2) * Minv * H;
+        };
+
+        q = newton_method(implicit_midpoint, implicit_midpoint_deriv, q);
+    }
 
     case SimParameters::TI_VELOCITY_VERLET:
+    {
         qprev = q;
         q = q + params_.timeStep * Minv * qdot.transpose();
         computeForceAndHessian(q, qprev, F, H);
         qdot = qdot + params_.timeStep * F;
+    }
 
     default:
         std::cerr << "Invalid time integrator" << std::endl;
