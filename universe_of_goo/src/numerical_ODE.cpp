@@ -18,14 +18,12 @@ void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
     // Its size is 2 * particles_.size() x 2 * particles_.size()
 
     // Populate Minv with the inverse mass matrix
-    Minv.reserve(Eigen::VectorXi::Constant(particles_.size(), 1));
+    Minv.reserve(Eigen::VectorXi::Constant(2 * particles_.size(), 1));
     for (uint i = 0; i < particles_.size(); i++)
     {
         Minv.insert(2 * i, 2 * i) = 1.0 / particles_[i].mass;
         Minv.insert(2 * i + 1, 2 * i + 1) = 1.0 / particles_[i].mass;
     }
-
-    Minv.makeCompressed();
 }
 
 /*
@@ -44,7 +42,7 @@ void compute_gravity_force(const Eigen::VectorXd &q, const Eigen::VectorXd &qpre
             if (!particles_[i].fixed)
             {
                 F(2 * i) += 0;
-                F(2 * i + 1) += -params_.gravityG * particles_[i].mass;
+                F(2 * i + 1) += params_.gravityG * particles_[i].mass;
             }
         }
     }
@@ -61,13 +59,16 @@ void compute_spring_force(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev
 {
     if (params_.springsEnabled)
     {
+        std::vector<Eigen::Triplet<double>> triplet_list;
+        triplet_list.reserve(2 * particles_.size());
+
         for (uint i = 0; i < connectors_.size(); i++)
         {
             double L = connectors_[i]->restlen;
             double k = connectors_[i]->stiffness / L;
 
-            int p1_index = 2 * connectors_[i]->p1;
-            int p2_index = 2 * connectors_[i]->p2;
+            int p1_index = connectors_[i]->p1;
+            int p2_index = connectors_[i]->p2;
 
             Eigen::Vector2d pos1 = q.segment(2 * p1_index, 2);
             Eigen::Vector2d pos2 = q.segment(2 * p2_index, 2);
@@ -76,17 +77,31 @@ void compute_spring_force(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev
 
             Eigen::Vector2d pos_unit = (pos1 - pos2) / dist;
 
+            // Local Hessian matrix
+            Eigen::Matrix2d H_value = pos_unit * pos_unit.transpose() + (dist - L) * (Eigen::MatrixXd::Identity(2, 2) / dist - pos_unit * pos_unit.transpose() / dist);
+
             if (!particles_[p1_index].fixed)
             {
+                // Corresponding index in the force vector
                 F.segment(2 * p1_index, 2) += -k * (dist - L) * pos_unit;
-                H.insert(2 * connectors_[i]->p1, 2 * connectors_[i]->p1) = k * (1 - (pos1 - pos2).dot(pos1 - pos2) / (dist * dist));
+
+                // Corresponding index in the Hessian matrix
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p1_index, -H_value(0, 0)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p1_index, -H_value(1, 0)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p1_index + 1, -H_value(0, 1)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p1_index + 1, -H_value(1, 1)));
             }
             if (!particles_[p2_index].fixed)
             {
-                F.segment(2 * p2_index, 2) += k * (dist - L) * (pos1 - pos2) / dist;
-                H.insert(2 * connectors_[i]->p2, 2 * connectors_[i]->p2) = k * (1 - (pos1 - pos2).dot(pos1 - pos2) / (dist * dist));
+                F.segment(2 * p2_index, 2) += k * (dist - L) * pos_unit;
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p2_index, H_value(0, 0)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p2_index, H_value(1, 0)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p2_index + 1, H_value(0, 1)));
+                triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p2_index + 1, H_value(1, 1)));
             }
         }
+
+        H.setFromTriplets(triplet_list.begin(), triplet_list.end());
     }
 }
 
@@ -113,6 +128,8 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     for (int i = 0; i < params_.NewtonMaxIters; i++)
     {
         Eigen::VectorXd f_val = func(x);
+
+        // Check for convergence
         if (f_val.norm() < params_.NewtonTolerance)
         {
             std::cout << "Newton's method converged in " << i << " iterations" << std::endl;
@@ -121,6 +138,7 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
 
         Eigen::SparseMatrix<double> deriv_val = deriv_func(x);
 
+        // Solve [df]x = (x - f(x))
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver;
         solver.compute(deriv_val);
         if (solver.info() != Eigen::Success)
@@ -128,7 +146,8 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
             std::cerr << "Decomposition failed" << std::endl;
             exit(1);
         }
-        x = solver.solve(x - f_val);
+        Eigen::VectorXd diff_x = solver.solve(-f_val);
+        x = x + diff_x;
     }
 
     return x;
@@ -136,6 +155,11 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
 
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
 {
+    if (q.size() == 0)
+    {
+        return;
+    }
+
     Eigen::SparseMatrix<double> Minv(2 * particles_.size(), 2 * particles_.size());
     computeMassInverse(Minv);
 
@@ -151,17 +175,19 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
     {
         computeForceAndHessian(q, qprev, F, H);
         qprev = q;
-        q = q + params_.timeStep * Minv * qdot.transpose();
+        q = q + params_.timeStep * Minv * qdot;
         qdot = qdot + params_.timeStep * F;
+        break;
     }
 
     case SimParameters::TI_IMPLICIT_EULER:
     {
         qprev = q;
+        // Lambda function for the implicit Euler method and its derivative
         auto implicit_euler = [&](Eigen::VectorXd q)
         {
             computeForceAndHessian(q, qprev, F, H);
-            return q - qprev - params_.timeStep * Minv * (qdot.transpose() + params_.timeStep * F.transpose());
+            return q - qprev - params_.timeStep * Minv * (qdot + params_.timeStep * F);
         };
 
         auto implicit_euler_deriv = [&](Eigen::VectorXd q)
@@ -171,15 +197,17 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
         };
 
         q = newton_method(implicit_euler, implicit_euler_deriv, q);
+        break;
     }
 
     case SimParameters::TI_IMPLICIT_MIDPOINT:
     {
         qprev = q;
+        // Lambda function for the implicit midpoint method and its derivative
         auto implicit_midpoint = [&](Eigen::VectorXd q)
         {
             computeForceAndHessian((q + qprev) / 2, qprev, F, H);
-            return q - qprev - params_.timeStep * Minv * (2 * qdot.transpose() + params_.timeStep * F.transpose()) / 2;
+            return q - qprev - params_.timeStep * Minv * (2 * qdot + params_.timeStep * F) / 2;
         };
 
         auto implicit_midpoint_deriv = [&](Eigen::VectorXd q)
@@ -189,14 +217,16 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
         };
 
         q = newton_method(implicit_midpoint, implicit_midpoint_deriv, q);
+        break;
     }
 
     case SimParameters::TI_VELOCITY_VERLET:
     {
         qprev = q;
-        q = q + params_.timeStep * Minv * qdot.transpose();
+        q = q + params_.timeStep * Minv * qdot;
         computeForceAndHessian(q, qprev, F, H);
         qdot = qdot + params_.timeStep * F;
+        break;
     }
 
     default:
