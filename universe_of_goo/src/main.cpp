@@ -276,8 +276,26 @@ void deleteSawedObjects()
 
 void pruneOverstrainedSprings()
 {
-    // TODO
+    std::vector<Spring *> new_connectors_;
+
     // Delete springs that have too high strain
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        Spring *spring = connectors_[i];
+        Eigen::Vector2d pos1 = particles_[spring->p1].pos;
+        Eigen::Vector2d pos2 = particles_[spring->p2].pos;
+
+        double dist = (pos1 - pos2).norm();
+        double strain = (dist - spring->restlen) / spring->restlen;
+
+        // Add the spring to the new list if it's not overstrained
+        if (strain <= params_.maxSpringStrain)
+        {
+            new_connectors_.push_back(spring);
+        }
+    }
+
+    connectors_ = new_connectors_;
 }
 
 bool simulateOneStep()

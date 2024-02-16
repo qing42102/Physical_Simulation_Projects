@@ -115,7 +115,7 @@ void floor_force(Eigen::VectorXd &q, Eigen::VectorXd &qdot, Eigen::VectorXd &F, 
         if (particles_[i].pos(1) <= -0.5 && !particles_[i].fixed)
         {
             F(2 * i) += 0;
-            F(2 * i + 1) = 0;
+            F(2 * i + 1) += params_.gravityG * particles_[i].mass;
 
             q(2 * i + 1) = -0.5;
             qdot(2 * i + 1) = 0;
