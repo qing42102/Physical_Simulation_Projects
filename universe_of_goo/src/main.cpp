@@ -225,9 +225,9 @@ void addParticle(double x, double y)
     for (int i = 0; i < newid; i++)
     {
         double dist = (particles_[i].pos - newpos).norm();
-        if (dist < params_.maxSpringDist)
+        if (dist <= params_.maxSpringDist)
         {
-            connectors_.push_back(new Spring(i, newid, mass, params_.springStiffness, dist, true));
+            connectors_.push_back(new Spring(i, newid, 0, params_.springStiffness, dist, true));
         }
     }
 }
