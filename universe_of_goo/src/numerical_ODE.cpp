@@ -57,7 +57,7 @@ void compute_spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::S
 {
 
     std::vector<Eigen::Triplet<double>> triplet_list;
-    triplet_list.reserve(2 * particles_.size());
+    triplet_list.reserve(4 * particles_.size());
 
     for (uint i = 0; i < connectors_.size(); i++)
     {
@@ -75,7 +75,7 @@ void compute_spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::S
         Eigen::Vector2d pos_unit = (pos1 - pos2) / dist;
 
         // Local Hessian matrix
-        Eigen::Matrix2d H_value = pos_unit * pos_unit.transpose() + (dist - L) * (Eigen::MatrixXd::Identity(2, 2) / dist - pos_unit * pos_unit.transpose() / dist);
+        Eigen::Matrix2d H_value = k * (pos_unit * pos_unit.transpose() + (dist - L) * (Eigen::MatrixXd::Identity(2, 2) / dist - pos_unit * pos_unit.transpose() / dist));
 
         // Local force vector
         Eigen::VectorXd F_value = k * (dist - L) * pos_unit;
@@ -102,7 +102,10 @@ void compute_spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::S
         }
     }
 
-    H.setFromTriplets(triplet_list.begin(), triplet_list.end());
+    Eigen::SparseMatrix<double> H_spring(2 * particles_.size(), 2 * particles_.size());
+    H_spring.setFromTriplets(triplet_list.begin(), triplet_list.end());
+
+    H += H_spring;
 }
 
 /*
@@ -119,6 +122,42 @@ void floor_force(Eigen::VectorXd &q, Eigen::VectorXd &qdot, Eigen::VectorXd &F, 
 
             q(2 * i + 1) = -0.5;
             qdot(2 * i + 1) = 0;
+        }
+    }
+}
+
+/*
+    Add the force due to viscous damping to the force vector F
+    Add the Hessian of the viscous damping force to the Hessian matrix H
+    F = k_damp (q_2^{i} - q_2^{i-1} - q_1^{i} - q_1^{i-1}) / h
+    H = k_damp / h * -I
+*/
+void viscous_damping(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+{
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        int p1_index = connectors_[i]->p1;
+        int p2_index = connectors_[i]->p2;
+
+        Eigen::Vector2d pos1 = q.segment(2 * p1_index, 2);
+        Eigen::Vector2d pos2 = q.segment(2 * p2_index, 2);
+
+        Eigen::Vector2d pos1_prev = qprev.segment(2 * p1_index, 2);
+        Eigen::Vector2d pos2_prev = qprev.segment(2 * p2_index, 2);
+
+        if (!particles_[p1_index].fixed)
+        {
+            // Corresponding index in the force vector
+            F.segment(2 * p1_index, 2) += params_.dampingStiffness * (pos2 - pos2_prev - pos1 + pos1_prev) / params_.timeStep;
+
+            // Corresponding index in the Hessian matrix
+            H.coeffRef(2 * p1_index, 2 * p1_index) += -params_.dampingStiffness / params_.timeStep;
+        }
+        if (!particles_[p2_index].fixed)
+        {
+
+            F.segment(2 * p2_index, 2) += params_.dampingStiffness * (pos1 - pos1_prev - pos2 + pos2_prev) / params_.timeStep;
+            H.coeffRef(2 * p2_index, 2 * p2_index) += -params_.dampingStiffness / params_.timeStep;
         }
     }
 }
@@ -144,6 +183,10 @@ void computeForceAndHessian(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::V
     if (params_.floorEnabled)
     {
         floor_force(q, qdot, F, H);
+    }
+    if (params_.dampingEnabled)
+    {
+        viscous_damping(q, qprev, F, H);
     }
 }
 

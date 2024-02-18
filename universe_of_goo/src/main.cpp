@@ -268,6 +268,16 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
     }
 }
 
+double point_to_infinite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
+{
+    return 0;
+}
+
+double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
+{
+    return 0;
+}
+
 void deleteSawedObjects()
 {
     // TODO
@@ -298,6 +308,21 @@ void pruneOverstrainedSprings()
     connectors_ = new_connectors_;
 }
 
+void delete_offscreen_particles()
+{
+    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
+
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        if (!(particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0))
+        {
+            new_particles_.push_back(particles_[i]);
+        }
+    }
+
+    particles_ = new_particles_;
+}
+
 bool simulateOneStep()
 {
     // Create configurational vectors
@@ -311,6 +336,9 @@ bool simulateOneStep()
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
     deleteSawedObjects();
+
+    // Cleanup: delete offscreen particles
+    delete_offscreen_particles();
 
     // Time advances
     time_ += params_.timeStep;
