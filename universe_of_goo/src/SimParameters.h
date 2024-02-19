@@ -27,8 +27,18 @@ struct SimParameters
         sawRadius = 0.1;
     }
 
-    enum ClickMode { CM_ADDPARTICLE, CM_ADDSAW };
-    enum TimeIntegrator { TI_EXPLICIT_EULER, TI_IMPLICIT_EULER, TI_IMPLICIT_MIDPOINT, TI_VELOCITY_VERLET };
+    enum ClickMode
+    {
+        CM_ADDPARTICLE,
+        CM_ADDSAW
+    };
+    enum TimeIntegrator
+    {
+        TI_EXPLICIT_EULER,
+        TI_IMPLICIT_EULER,
+        TI_IMPLICIT_MIDPOINT,
+        TI_VELOCITY_VERLET
+    };
 
     double timeStep;
     TimeIntegrator integrator;
@@ -50,5 +60,7 @@ struct SimParameters
     bool particleFixed;
     double sawRadius;
 };
+
+extern SimParameters params_;
 
 #endif

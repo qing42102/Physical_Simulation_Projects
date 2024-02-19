@@ -65,4 +65,8 @@ public:
     double kb;
 };
 
+extern std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
+extern std::vector<Spring *> connectors_;
+extern std::vector<Saw> saws_;
+
 #endif
