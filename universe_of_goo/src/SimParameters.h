@@ -37,7 +37,8 @@ struct SimParameters
         TI_EXPLICIT_EULER,
         TI_IMPLICIT_EULER,
         TI_IMPLICIT_MIDPOINT,
-        TI_VELOCITY_VERLET
+        TI_VELOCITY_VERLET,
+        TI_RK_45
     };
 
     double timeStep;

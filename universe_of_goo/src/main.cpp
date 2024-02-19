@@ -266,7 +266,7 @@ void callback()
     if (ImGui::CollapsingHeader("Simulation Options"))
     {
         ImGui::InputDouble("Timestep", &params_.timeStep);
-        ImGui::Combo("Integrator", (int *)&params_.integrator, "Explicit Euler\0Implicit Euler\0Implicit Midpoint\0Velocity Verlet\0\0");
+        ImGui::Combo("Integrator", (int *)&params_.integrator, "Explicit Euler\0Implicit Euler\0Implicit Midpoint\0Velocity Verlet\0RK45\0\0");
         ImGui::InputDouble("Newton Tolerance", &params_.NewtonTolerance);
         ImGui::InputInt("Newton Max Iters", &params_.NewtonMaxIters);
     }

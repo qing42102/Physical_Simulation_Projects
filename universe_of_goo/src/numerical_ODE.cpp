@@ -69,7 +69,12 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     return x;
 }
 
-void explicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot, Eigen::SparseMatrix<double> &Minv, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void explicit_euler(Eigen::VectorXd &q,
+                    Eigen::VectorXd &qprev,
+                    Eigen::VectorXd &qdot,
+                    Eigen::SparseMatrix<double> &Minv,
+                    Eigen::VectorXd &F,
+                    Eigen::SparseMatrix<double> &H)
 {
     computeForceAndHessian(q, qprev, qdot, F, H);
     qprev = q;
@@ -77,7 +82,12 @@ void explicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd 
     qdot = qdot + params_.timeStep * Minv * F;
 }
 
-void implict_euler(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot, Eigen::SparseMatrix<double> &Minv, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void implict_euler(Eigen::VectorXd &q,
+                   Eigen::VectorXd &qprev,
+                   Eigen::VectorXd &qdot,
+                   Eigen::SparseMatrix<double> &Minv,
+                   Eigen::VectorXd &F,
+                   Eigen::SparseMatrix<double> &H)
 {
     qprev = q;
     // Lambda function for the implicit Euler method and its derivative
@@ -98,7 +108,12 @@ void implict_euler(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &
     q = newton_method(implicit_euler, implicit_euler_deriv, q);
 }
 
-void implicit_midpoint(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot, Eigen::SparseMatrix<double> &Minv, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void implicit_midpoint(Eigen::VectorXd &q,
+                       Eigen::VectorXd &qprev,
+                       Eigen::VectorXd &qdot,
+                       Eigen::SparseMatrix<double> &Minv,
+                       Eigen::VectorXd &F,
+                       Eigen::SparseMatrix<double> &H)
 {
     qprev = q;
     Eigen::VectorXd avg_q = (q + qprev) / 2;
@@ -119,12 +134,76 @@ void implicit_midpoint(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vector
     q = newton_method(implicit_midpoint, implicit_midpoint_deriv, q);
 }
 
-void velocity_verlet(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot, Eigen::SparseMatrix<double> &Minv, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void velocity_verlet(Eigen::VectorXd &q,
+                     Eigen::VectorXd &qprev,
+                     Eigen::VectorXd &qdot,
+                     Eigen::SparseMatrix<double> &Minv,
+                     Eigen::VectorXd &F,
+                     Eigen::SparseMatrix<double> &H)
 {
     qprev = q;
     q = q + params_.timeStep * qdot;
     computeForceAndHessian(q, qprev, qdot, F, H);
     qdot = qdot + params_.timeStep * Minv * F;
+}
+
+void Runge_Kutta_45(Eigen::VectorXd &q,
+                    Eigen::VectorXd &qprev,
+                    Eigen::VectorXd &qdot,
+                    Eigen::SparseMatrix<double> &Minv,
+                    Eigen::VectorXd &F,
+                    Eigen::SparseMatrix<double> &H,
+                    double tolerance)
+{
+    // Runge Kutta Felhberg method for solving a system of ODEs
+
+    // Compute the k1, k2, k3, k4, k5, k6 vectors
+    Eigen::VectorXd k1_q = params_.timeStep * qdot;
+    computeForceAndHessian(q, qprev, qdot, F, H);
+    Eigen::VectorXd k1_qdot = params_.timeStep * Minv * F;
+
+    Eigen::VectorXd k2_q = params_.timeStep * (qdot + 0.25 * k1_qdot);
+    Eigen::VectorXd q_new = q + 0.25 * k1_q;
+    computeForceAndHessian(q_new, qprev, qdot, F, H);
+    Eigen::VectorXd k2_qdot = params_.timeStep * Minv * F;
+
+    Eigen::VectorXd k3_q = params_.timeStep * (qdot + 3.0 / 32.0 * k1_qdot + 9.0 / 32.0 * k2_qdot);
+    q_new = q + 3.0 / 32.0 * k1_q + 9.0 / 32.0 * k2_q;
+    computeForceAndHessian(q_new, qprev, qdot, F, H);
+    Eigen::VectorXd k3_qdot = params_.timeStep * Minv * F;
+
+    Eigen::VectorXd k4_q = params_.timeStep * (qdot + 1932.0 / 2197.0 * k1_qdot - 7200.0 / 2197.0 * k2_qdot + 7296.0 / 2197.0 * k3_qdot);
+    q_new = q + 1932.0 / 2197.0 * k1_q - 7200.0 / 2197.0 * k2_q + 7296.0 / 2197.0 * k3_q;
+    computeForceAndHessian(q_new, qprev, qdot, F, H);
+    Eigen::VectorXd k4_qdot = params_.timeStep * Minv * F;
+
+    Eigen::VectorXd k5_q = params_.timeStep * (qdot + 439.0 / 216.0 * k1_qdot - 8.0 * k2_qdot + 3680.0 / 513.0 * k3_qdot - 845.0 / 4104.0 * k4_qdot);
+    q_new = q + 439.0 / 216.0 * k1_q - 8.0 * k2_q + 3680.0 / 513.0 * k3_q - 845.0 / 4104.0 * k4_q;
+    computeForceAndHessian(q_new, qprev, qdot, F, H);
+    Eigen::VectorXd k5_qdot = params_.timeStep * Minv * F;
+
+    Eigen::VectorXd k6_q = params_.timeStep * (qdot - 8.0 / 27.0 * k1_qdot + 2.0 * k2_qdot - 3544.0 / 2565.0 * k3_qdot + 1859.0 / 4104.0 * k4_qdot - 11.0 / 40.0 * k5_qdot);
+    q_new = q - 8.0 / 27.0 * k1_q + 2.0 * k2_q - 3544.0 / 2565.0 * k3_q + 1859.0 / 4104.0 * k4_q - 11.0 / 40.0 * k5_q;
+    computeForceAndHessian(q_new, qprev, qdot, F, H);
+    Eigen::VectorXd k6_qdot = params_.timeStep * Minv * F;
+
+    // Compute the new q and qdot vectors
+    q = q + 16.0 / 135.0 * k1_q + 6656.0 / 12825.0 * k3_q + 28561.0 / 56430.0 * k4_q - 9.0 / 50.0 * k5_q + 2.0 / 55.0 * k6_q;
+    qdot = qdot + 16.0 / 135.0 * k1_qdot + 6656.0 / 12825.0 * k3_qdot + 28561.0 / 56430.0 * k4_qdot - 9.0 / 50.0 * k5_qdot + 2.0 / 55.0 * k6_qdot;
+
+    // Compute the error
+    Eigen::VectorXd error_q = -1.0 / 360.0 * k1_q + 128.0 / 4275.0 * k3_q + 2197.0 / 75240.0 * k4_q - 1.0 / 50.0 * k5_q - 2.0 / 55.0 * k6_q;
+    Eigen::VectorXd error_qdot = -1.0 / 360.0 * k1_qdot + 128.0 / 4275.0 * k3_qdot + 2197.0 / 75240.0 * k4_qdot - 1.0 / 50.0 * k5_qdot - 2.0 / 55.0 * k6_qdot;
+    double error = sqrt(error_q.squaredNorm() + error_qdot.squaredNorm());
+
+    // Adaptive time step
+    double new_time_step = params_.timeStep * 0.9 * pow(tolerance / error, 0.2);
+    if (new_time_step < 0.01)
+    {
+        params_.timeStep = new_time_step;
+    }
+
+    std::cout << "Adaptive time step: " << params_.timeStep << std::endl;
 }
 
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot)
@@ -168,6 +247,13 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
     {
         velocity_verlet(q, qprev, qdot, Minv, F, H);
         std::cout << "One step of Velocity Verlet" << std::endl;
+        break;
+    }
+
+    case SimParameters::TI_RK_45:
+    {
+        Runge_Kutta_45(q, qprev, qdot, Minv, F, H, 1e-6);
+        std::cout << "One step of Runge Kutta 45" << std::endl;
         break;
     }
 
