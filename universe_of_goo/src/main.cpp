@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <utility>
 #include <deque>
+#include <algorithm>
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 
@@ -268,20 +269,76 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
     }
 }
 
+void delete_unconnected_springs(int particle_index)
+{
+    std::vector<Spring *> new_connectors_;
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    {
+        Spring *spring = *it;
+        // Delete springs connected to this particle
+        if (spring->p1 == particle_index || spring->p2 == particle_index)
+        {
+            delete spring;
+        }
+        // Add the spring to the new list if it's not connected to the deleted particle
+        else
+        {
+            new_connectors_.push_back(spring);
+        }
+    }
+    connectors_ = new_connectors_;
+}
+
 double point_to_infinite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
 {
-    return 0;
+    Eigen::Vector2d line_vec = (q2 - q1) / (q2 - q1).norm();
+    Eigen::Vector2d v = p - q1;
+    double t = v.dot(line_vec);
+    Eigen::Vector2d c = q1 + t * line_vec;
+
+    return (p - c).norm();
 }
 
 double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
 {
-    return 0;
+    Eigen::Vector2d line_vec = (q2 - q1) / (q2 - q1).norm();
+    Eigen::Vector2d v = p - q1;
+    double t = std::max(0.0, std::min(1.0, v.dot(line_vec)));
+    Eigen::Vector2d c = q1 + t * line_vec;
+
+    return (p - c).norm();
 }
 
 void deleteSawedObjects()
 {
-    // TODO
     // Delete particles and springs that touch a saw
+    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
+
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        bool delete_particle = false;
+        for (std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
+        {
+            if ((particles_[i].pos - it->pos).norm() < it->radius)
+            {
+                delete_particle = true;
+                break;
+            }
+        }
+
+        // Delete this particle that is too close to a saw
+        if (delete_particle)
+        {
+            delete_unconnected_springs(i);
+        }
+        // Add the particle to the new list if it doesn't touch a saw
+        else
+        {
+            new_particles_.push_back(particles_[i]);
+        }
+    }
+
+    particles_ = new_particles_;
 }
 
 void pruneOverstrainedSprings()
@@ -289,17 +346,21 @@ void pruneOverstrainedSprings()
     std::vector<Spring *> new_connectors_;
 
     // Delete springs that have too high strain
-    for (uint i = 0; i < connectors_.size(); i++)
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = connectors_[i];
+        Spring *spring = *it;
         Eigen::Vector2d pos1 = particles_[spring->p1].pos;
         Eigen::Vector2d pos2 = particles_[spring->p2].pos;
 
         double dist = (pos1 - pos2).norm();
         double strain = (dist - spring->restlen) / spring->restlen;
 
+        if (strain > params_.maxSpringStrain)
+        {
+            delete spring;
+        }
         // Add the spring to the new list if it's not overstrained
-        if (strain <= params_.maxSpringStrain)
+        else
         {
             new_connectors_.push_back(spring);
         }
@@ -314,7 +375,13 @@ void delete_offscreen_particles()
 
     for (uint i = 0; i < particles_.size(); i++)
     {
-        if (!(particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0))
+        // Delete particles that are offscreen
+        if (particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0)
+        {
+            delete_unconnected_springs(i);
+        }
+        // Add the particle to the new list if it's not offscreen
+        else
         {
             new_particles_.push_back(particles_[i]);
         }
