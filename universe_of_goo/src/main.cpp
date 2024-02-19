@@ -269,6 +269,10 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
     }
 }
 
+/*
+    Delete springs that are connected to a particle that is about to be deleted
+    @param particle_index Index of the particle to be deleted
+ */
 void delete_unconnected_springs(int particle_index)
 {
     std::vector<Spring *> new_connectors_;
@@ -280,15 +284,28 @@ void delete_unconnected_springs(int particle_index)
         {
             delete spring;
         }
-        // Add the spring to the new list if it's not connected to the deleted particle
+        // Keep the spring in the new list if it's not connected to the deleted particle
         else
         {
+            // Update the indices of the springs that are connected to particles with higher indices
+            if (spring->p1 > particle_index)
+                spring->p1--;
+            if (spring->p2 > particle_index)
+                spring->p2--;
             new_connectors_.push_back(spring);
         }
     }
     connectors_ = new_connectors_;
 }
 
+/*
+    Calculate the distance between a point and an infinite line
+    @param p The point
+    @param q1 A point on the line
+    @param q2 Another point on the line
+    @return The distance between the point and the line
+
+*/
 double point_to_infinite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
 {
     Eigen::Vector2d line_vec = (q2 - q1) / (q2 - q1).norm();
@@ -299,6 +316,13 @@ double point_to_infinite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector
     return (p - c).norm();
 }
 
+/*
+    Calculate the distance between a point and a finite line
+    @param p The point
+    @param q1 One end of the line
+    @param q2 The other end of the line
+    @return The distance between the point and the line
+*/
 double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d &q1, const Eigen::Vector2d &q2)
 {
     Eigen::Vector2d line_vec = (q2 - q1) / (q2 - q1).norm();
@@ -309,9 +333,49 @@ double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d
     return (p - c).norm();
 }
 
-void deleteSawedObjects()
+/*
+    Delete springs that are too close to a saw
+*/
+void delete_sawed_springs()
 {
-    // Delete particles and springs that touch a saw
+    std::vector<Spring *> new_connectors_;
+    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    {
+        Spring *spring = *it;
+        Eigen::Vector2d pos1 = particles_[spring->p1].pos;
+        Eigen::Vector2d pos2 = particles_[spring->p2].pos;
+
+        bool delete_spring = false;
+        for (std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
+        {
+            // Delete springs that are too close to a saw
+            // The distance between the saw's center and the line formed by the spring's endpoints is less than the saw's radius
+            double dist = point_to_finite_line_dist(saw->pos, pos1, pos2);
+            if (dist < saw->radius)
+            {
+                delete_spring = true;
+                break;
+            }
+        }
+
+        if (delete_spring)
+        {
+            delete spring;
+        }
+        // Keep the spring in the new list if it doesn't touch a saw
+        else
+        {
+            new_connectors_.push_back(spring);
+        }
+    }
+    connectors_ = new_connectors_;
+}
+
+/*
+    Delete particles that are too close to a saw
+*/
+void delete_sawed_particles()
+{
     std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
 
     for (uint i = 0; i < particles_.size(); i++)
@@ -319,6 +383,8 @@ void deleteSawedObjects()
         bool delete_particle = false;
         for (std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
         {
+            // Delete this particle that is too close to a saw
+            // The distance between the particle and the saw is less than the saw's radius
             if ((particles_[i].pos - it->pos).norm() < it->radius)
             {
                 delete_particle = true;
@@ -326,12 +392,11 @@ void deleteSawedObjects()
             }
         }
 
-        // Delete this particle that is too close to a saw
         if (delete_particle)
         {
             delete_unconnected_springs(i);
         }
-        // Add the particle to the new list if it doesn't touch a saw
+        // Keep the particle in the new list if it doesn't touch a saw
         else
         {
             new_particles_.push_back(particles_[i]);
@@ -359,7 +424,7 @@ void pruneOverstrainedSprings()
         {
             delete spring;
         }
-        // Add the spring to the new list if it's not overstrained
+        // Keep the spring in the new list if it's not overstrained
         else
         {
             new_connectors_.push_back(spring);
@@ -369,6 +434,9 @@ void pruneOverstrainedSprings()
     connectors_ = new_connectors_;
 }
 
+/*
+    Delete particles that are offscreen
+*/
 void delete_offscreen_particles()
 {
     std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
@@ -380,7 +448,7 @@ void delete_offscreen_particles()
         {
             delete_unconnected_springs(i);
         }
-        // Add the particle to the new list if it's not offscreen
+        // Keep the particle in a new list if it's not offscreen
         else
         {
             new_particles_.push_back(particles_[i]);
@@ -392,6 +460,8 @@ void delete_offscreen_particles()
 
 bool simulateOneStep()
 {
+    system("clear");
+
     // Create configurational vectors
     Eigen::VectorXd q, qprev, v;
     buildConfiguration(q, qprev, v);
@@ -400,9 +470,12 @@ bool simulateOneStep()
     // Unpack the DOFs back into the particles for rendering
     unbuildConfiguration(q, v);
 
+    std::cout << "Deleting offscreen particles and sawed objects" << std::endl;
+
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
-    deleteSawedObjects();
+    delete_sawed_particles();
+    delete_sawed_springs();
 
     // Cleanup: delete offscreen particles
     delete_offscreen_particles();

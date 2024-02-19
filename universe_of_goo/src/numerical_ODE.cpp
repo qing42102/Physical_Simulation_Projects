@@ -174,22 +174,33 @@ void computeForceAndHessian(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::V
 
     if (params_.gravityEnabled)
     {
+        std::cout << "Computing gravitational force" << std::endl;
         compute_gravity_force(q, F, H);
     }
     if (params_.springsEnabled)
     {
+        std::cout << "Computing spring force" << std::endl;
         compute_spring_force(q, F, H);
     }
     if (params_.floorEnabled)
     {
+        std::cout << "Computing floor force" << std::endl;
         floor_force(q, qdot, F, H);
     }
     if (params_.dampingEnabled)
     {
+        std::cout << "Computing viscous damping force" << std::endl;
         viscous_damping(q, qprev, F, H);
     }
 }
 
+/*
+    Newton's method for solving a system of nonlinear equations
+    @param func the function whose root we want to find
+    @param deriv_func the derivative of the function
+    @param initial_guess the initial guess for the root
+    @returns the root of the function
+*/
 Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> func,
                               std::function<Eigen::SparseMatrix<double>(Eigen::VectorXd)> deriv_func,
                               const Eigen::VectorXd &initial_guess)
