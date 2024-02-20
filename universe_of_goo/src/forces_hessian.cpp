@@ -22,7 +22,6 @@ void gravity_force(const Eigen::VectorXd &q,
     {
         if (!particles_[i].fixed)
         {
-            F(2 * i) += 0;
             F(2 * i + 1) += params_.gravityG * particles_[i].mass;
         }
     }
@@ -112,10 +111,11 @@ void spring_force(const Eigen::VectorXd &q,
 }
 
 /*
-    Add the normal force due to the floor
+    Add the force due to the floor
+    F = 0 if y_i <= -0.5
+    F = m_i * (-v_i^2 / (-0.5 - y_i)) if -0.5 < y_i <= -0.45
 */
-void floor_force(Eigen::VectorXd &q,
-                 Eigen::VectorXd &qdot,
+void floor_force(const Eigen::VectorXd &q,
                  Eigen::VectorXd &F,
                  Eigen::SparseMatrix<double> &H)
 {
@@ -123,11 +123,12 @@ void floor_force(Eigen::VectorXd &q,
     {
         if (particles_[i].pos(1) <= -0.5 && !particles_[i].fixed)
         {
-            F(2 * i) += 0;
-            F(2 * i + 1) += params_.gravityG * particles_[i].mass;
-
-            q(2 * i + 1) = -0.5;
-            qdot(2 * i + 1) = 0;
+            F(2 * i + 1) = 0;
+        }
+        else if (particles_[i].pos(1) > -0.5 && particles_[i].pos(1) <= -0.45 && !particles_[i].fixed)
+        {
+            F(2 * i + 1) = 0;
+            F(2 * i + 1) += particles_[i].mass * (pow(particles_[i].vel(1), 2) / (0.5 + particles_[i].pos(1)));
         }
     }
 }
@@ -189,9 +190,9 @@ void viscous_damping(const Eigen::VectorXd &q,
     H += H_damping;
 }
 
-void computeForceAndHessian(Eigen::VectorXd &q,
-                            Eigen::VectorXd &qprev,
-                            Eigen::VectorXd &qdot,
+void computeForceAndHessian(const Eigen::VectorXd &q,
+                            const Eigen::VectorXd &qprev,
+                            const Eigen::VectorXd &qdot,
                             Eigen::VectorXd &F,
                             Eigen::SparseMatrix<double> &H)
 {
@@ -213,14 +214,15 @@ void computeForceAndHessian(Eigen::VectorXd &q,
         std::cout << "Computing spring force\n";
         spring_force(q, F, H);
     }
-    if (params_.floorEnabled)
-    {
-        std::cout << "Computing floor force\n";
-        floor_force(q, qdot, F, H);
-    }
     if (params_.dampingEnabled)
     {
         std::cout << "Computing viscous damping force\n";
         viscous_damping(q, qprev, F, H);
+    }
+    // Floor force is added last to ensure it overwrites the other forces
+    if (params_.floorEnabled)
+    {
+        std::cout << "Computing floor force\n";
+        floor_force(q, F, H);
     }
 }
