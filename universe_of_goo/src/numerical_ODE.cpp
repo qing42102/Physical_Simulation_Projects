@@ -82,30 +82,31 @@ void explicit_euler(Eigen::VectorXd &q,
     qdot = qdot + params_.timeStep * Minv * F;
 }
 
-void implict_euler(Eigen::VectorXd &q,
-                   Eigen::VectorXd &qprev,
-                   Eigen::VectorXd &qdot,
-                   Eigen::SparseMatrix<double> &Minv,
-                   Eigen::VectorXd &F,
-                   Eigen::SparseMatrix<double> &H)
+void implicit_euler(Eigen::VectorXd &q,
+                    Eigen::VectorXd &qprev,
+                    Eigen::VectorXd &qdot,
+                    Eigen::SparseMatrix<double> &Minv,
+                    Eigen::VectorXd &F,
+                    Eigen::SparseMatrix<double> &H)
 {
     qprev = q;
     // Lambda function for the implicit Euler method and its derivative
-    auto implicit_euler = [&](Eigen::VectorXd q)
+    auto func = [&](Eigen::VectorXd q) -> Eigen::VectorXd
     {
         computeForceAndHessian(q, qprev, qdot, F, H);
         return q - qprev - params_.timeStep * (qdot + params_.timeStep * Minv * F);
     };
 
-    auto implicit_euler_deriv = [&](Eigen::VectorXd q)
+    auto deriv = [&](Eigen::VectorXd q) -> Eigen::SparseMatrix<double>
     {
         computeForceAndHessian(q, qprev, qdot, F, H);
         Eigen::SparseMatrix<double> sparse_I = Eigen::MatrixXd::Identity(2 * particles_.size(), 2 * particles_.size()).sparseView();
-        Eigen::SparseMatrix<double> deriv = sparse_I - pow(params_.timeStep, 2) * Minv * H;
-        return deriv;
+        return sparse_I - pow(params_.timeStep, 2) * Minv * H;
     };
 
-    q = newton_method(implicit_euler, implicit_euler_deriv, q);
+    q = newton_method(func, deriv, q);
+    computeForceAndHessian(q, qprev, qdot, F, H);
+    qdot = qdot + params_.timeStep * Minv * F;
 }
 
 void implicit_midpoint(Eigen::VectorXd &q,
@@ -116,22 +117,26 @@ void implicit_midpoint(Eigen::VectorXd &q,
                        Eigen::SparseMatrix<double> &H)
 {
     qprev = q;
-    Eigen::VectorXd avg_q = (q + qprev) / 2;
     // Lambda function for the implicit midpoint method and its derivative
-    auto implicit_midpoint = [&](Eigen::VectorXd q)
+    auto func = [&](Eigen::VectorXd q) -> Eigen::VectorXd
     {
+        Eigen::VectorXd avg_q = (q + qprev) / 2;
         computeForceAndHessian(avg_q, qprev, qdot, F, H);
-        return q - qprev - params_.timeStep * Minv * (2 * qdot + params_.timeStep * F) / 2;
+        return q - qprev - params_.timeStep * (2 * qdot + params_.timeStep * Minv * F) / 2;
     };
 
-    auto implicit_midpoint_deriv = [&](Eigen::VectorXd q)
+    auto deriv = [&](Eigen::VectorXd q) -> Eigen::SparseMatrix<double>
     {
+        Eigen::VectorXd avg_q = (q + qprev) / 2;
         computeForceAndHessian(avg_q, qprev, qdot, F, H);
         Eigen::SparseMatrix<double> sparse_I = Eigen::MatrixXd::Identity(2 * particles_.size(), 2 * particles_.size()).sparseView();
-        return sparse_I - 0.5 * pow(params_.timeStep, 2) * Minv * H;
+        return sparse_I - 0.25 * pow(params_.timeStep, 2) * Minv * H;
     };
 
-    q = newton_method(implicit_midpoint, implicit_midpoint_deriv, q);
+    q = newton_method(func, deriv, q);
+    Eigen::VectorXd avg_q = (q + qprev) / 2;
+    computeForceAndHessian(avg_q, qprev, qdot, F, H);
+    qdot = qdot + params_.timeStep * Minv * F;
 }
 
 void velocity_verlet(Eigen::VectorXd &q,
@@ -187,6 +192,8 @@ void Runge_Kutta_45(Eigen::VectorXd &q,
     computeForceAndHessian(q_new, qprev, qdot, F, H);
     Eigen::VectorXd k6_qdot = params_.timeStep * Minv * F;
 
+    qprev = q;
+
     // Compute the new q and qdot vectors
     q = q + 16.0 / 135.0 * k1_q + 6656.0 / 12825.0 * k3_q + 28561.0 / 56430.0 * k4_q - 9.0 / 50.0 * k5_q + 2.0 / 55.0 * k6_q;
     qdot = qdot + 16.0 / 135.0 * k1_qdot + 6656.0 / 12825.0 * k3_qdot + 28561.0 / 56430.0 * k4_qdot - 9.0 / 50.0 * k5_qdot + 2.0 / 55.0 * k6_qdot;
@@ -231,7 +238,7 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vec
 
     case SimParameters::TI_IMPLICIT_EULER:
     {
-        implict_euler(q, qprev, qdot, Minv, F, H);
+        implicit_euler(q, qprev, qdot, Minv, F, H);
         std::cout << "One step of Implicit Euler" << std::endl;
         break;
     }

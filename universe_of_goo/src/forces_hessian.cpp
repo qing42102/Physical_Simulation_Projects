@@ -13,7 +13,9 @@
     F = [0, \sum_i m_i * g]
     H = [0, 0, 0, 0]
 */
-void gravity_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void gravity_force(const Eigen::VectorXd &q,
+                   Eigen::VectorXd &F,
+                   Eigen::SparseMatrix<double> &H)
 {
 
     for (uint i = 0; i < particles_.size(); i++)
@@ -31,9 +33,12 @@ void gravity_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::SparseMa
     Add the Hessian of the spring force to the Hessian matrix H
     V = \sum_{ij} \frac{1}{2} k_{ij} (\Vert p_i - p_j \Vert - L_{ij})^2
     F = \sum_{ij} -k_{ij} (\Vert p_i - p_j \Vert - L_{ij}) \frac{p_i - p_j}{\Vert p_i - p_j \Vert}
-    H = \sum_{ij} k_{ij} \left(\frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^2} + (\Vert p_i - p_j \Vert - L_{ij}) \left(\frac{\mathbf{I}}{\Vert p_i - p_j \Vert} - \frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^3} \right) \right)
+    H = \sum_{ij} k_{ij} \left(\frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^2} +
+        (\Vert p_i - p_j \Vert - L_{ij}) \left(\frac{\mathbf{I}}{\Vert p_i - p_j \Vert} - \frac{(p_i - p_j) (p_i - p_j)^T}{\Vert p_i - p_j \Vert^3} \right) \right)
 */
-void spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void spring_force(const Eigen::VectorXd &q,
+                  Eigen::VectorXd &F,
+                  Eigen::SparseMatrix<double> &H)
 {
 
     std::vector<Eigen::Triplet<double>> triplet_list;
@@ -66,19 +71,36 @@ void spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::SparseMat
             F.segment(2 * p1_index, 2) += -F_value;
 
             // Corresponding index in the Hessian matrix
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p1_index, -H_value(0, 0)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p1_index, -H_value(1, 0)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p1_index + 1, -H_value(0, 1)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p1_index + 1, -H_value(1, 1)));
+            for (int j = 0; j < 2; j++)
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + j, 2 * p1_index + k, -H_value(j, k)));
+                }
+            }
         }
         if (!particles_[p2_index].fixed)
         {
             F.segment(2 * p2_index, 2) += F_value;
 
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p2_index, H_value(0, 0)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p2_index, H_value(1, 0)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p2_index + 1, H_value(0, 1)));
-            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p2_index + 1, H_value(1, 1)));
+            for (int j = 0; j < 2; j++)
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + j, 2 * p2_index + k, -H_value(j, k)));
+                }
+            }
+        }
+        if (!particles_[p1_index].fixed && !particles_[p2_index].fixed)
+        {
+            for (int j = 0; j < 2; j++)
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + j, 2 * p2_index + k, H_value(j, k)));
+                    triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + j, 2 * p1_index + k, H_value(j, k)));
+                }
+            }
         }
     }
 
@@ -91,7 +113,10 @@ void spring_force(const Eigen::VectorXd &q, Eigen::VectorXd &F, Eigen::SparseMat
 /*
     Add the normal force due to the floor
 */
-void floor_force(Eigen::VectorXd &q, Eigen::VectorXd &qdot, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void floor_force(Eigen::VectorXd &q,
+                 Eigen::VectorXd &qdot,
+                 Eigen::VectorXd &F,
+                 Eigen::SparseMatrix<double> &H)
 {
     for (uint i = 0; i < particles_.size(); i++)
     {
@@ -112,7 +137,10 @@ void floor_force(Eigen::VectorXd &q, Eigen::VectorXd &qdot, Eigen::VectorXd &F, 
     F = k_damp (q_2^{i} - q_2^{i-1} - q_1^{i} - q_1^{i-1}) / h
     H = k_damp / h * -I
 */
-void viscous_damping(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void viscous_damping(const Eigen::VectorXd &q,
+                     const Eigen::VectorXd &qprev,
+                     Eigen::VectorXd &F,
+                     Eigen::SparseMatrix<double> &H)
 {
     for (uint i = 0; i < connectors_.size(); i++)
     {
@@ -142,7 +170,11 @@ void viscous_damping(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eig
     }
 }
 
-void computeForceAndHessian(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::VectorXd &qdot, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void computeForceAndHessian(Eigen::VectorXd &q,
+                            Eigen::VectorXd &qprev,
+                            Eigen::VectorXd &qdot,
+                            Eigen::VectorXd &F,
+                            Eigen::SparseMatrix<double> &H)
 {
     // Compute the total force and Hessian for all potentials in the system
     // This function should respect the booleans in params_ to allow the user
