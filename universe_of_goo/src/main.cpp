@@ -224,7 +224,7 @@ bool simulateOneStep()
     // Unpack the DOFs back into the particles for rendering
     unbuildConfiguration(q, v);
 
-    std::cout << "Deleting offscreen particles and sawed objects" << std::endl;
+    std::cout << "Deleting offscreen particles and sawed objects\n";
 
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
@@ -237,7 +237,7 @@ bool simulateOneStep()
     // Time advances
     time_ += params_.timeStep;
 
-    std::cout << "Time: " << time_ << std::endl;
+    std::cout << "Time: " << time_ << "\n";
 
     return false;
 }

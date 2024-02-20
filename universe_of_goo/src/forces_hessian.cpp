@@ -40,9 +40,8 @@ void spring_force(const Eigen::VectorXd &q,
                   Eigen::VectorXd &F,
                   Eigen::SparseMatrix<double> &H)
 {
-
     std::vector<Eigen::Triplet<double>> triplet_list;
-    triplet_list.reserve(4 * particles_.size());
+    triplet_list.reserve(16 * particles_.size());
 
     for (uint i = 0; i < connectors_.size(); i++)
     {
@@ -68,6 +67,7 @@ void spring_force(const Eigen::VectorXd &q,
         if (!particles_[p1_index].fixed)
         {
             // Corresponding index in the force vector
+            // The force is negative because it is applied to the first particle
             F.segment(2 * p1_index, 2) += -F_value;
 
             // Corresponding index in the Hessian matrix
@@ -91,6 +91,7 @@ void spring_force(const Eigen::VectorXd &q,
                 }
             }
         }
+        // Cross Hessian terms
         if (!particles_[p1_index].fixed && !particles_[p2_index].fixed)
         {
             for (int j = 0; j < 2; j++)
@@ -142,6 +143,9 @@ void viscous_damping(const Eigen::VectorXd &q,
                      Eigen::VectorXd &F,
                      Eigen::SparseMatrix<double> &H)
 {
+    std::vector<Eigen::Triplet<double>> triplet_list;
+    triplet_list.reserve(4 * particles_.size());
+
     for (uint i = 0; i < connectors_.size(); i++)
     {
         int p1_index = connectors_[i]->p1;
@@ -159,15 +163,30 @@ void viscous_damping(const Eigen::VectorXd &q,
             F.segment(2 * p1_index, 2) += params_.dampingStiffness * (pos2 - pos2_prev - pos1 + pos1_prev) / params_.timeStep;
 
             // Corresponding index in the Hessian matrix
-            H.coeffRef(2 * p1_index, 2 * p1_index) += -params_.dampingStiffness / params_.timeStep;
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p1_index, -params_.dampingStiffness / params_.timeStep));
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p1_index + 1, -params_.dampingStiffness / params_.timeStep));
         }
         if (!particles_[p2_index].fixed)
         {
-
             F.segment(2 * p2_index, 2) += params_.dampingStiffness * (pos1 - pos1_prev - pos2 + pos2_prev) / params_.timeStep;
-            H.coeffRef(2 * p2_index, 2 * p2_index) += -params_.dampingStiffness / params_.timeStep;
+
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p2_index, -params_.dampingStiffness / params_.timeStep));
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p2_index + 1, -params_.dampingStiffness / params_.timeStep));
+        }
+        // Cross Hessian terms
+        if (!particles_[p1_index].fixed && !particles_[p2_index].fixed)
+        {
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index, 2 * p2_index, params_.dampingStiffness / params_.timeStep));
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index, 2 * p1_index, params_.dampingStiffness / params_.timeStep));
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p1_index + 1, 2 * p2_index + 1, params_.dampingStiffness / params_.timeStep));
+            triplet_list.push_back(Eigen::Triplet<double>(2 * p2_index + 1, 2 * p1_index + 1, params_.dampingStiffness / params_.timeStep));
         }
     }
+
+    Eigen::SparseMatrix<double> H_damping(2 * particles_.size(), 2 * particles_.size());
+    H_damping.setFromTriplets(triplet_list.begin(), triplet_list.end());
+
+    H += H_damping;
 }
 
 void computeForceAndHessian(Eigen::VectorXd &q,
@@ -186,22 +205,22 @@ void computeForceAndHessian(Eigen::VectorXd &q,
 
     if (params_.gravityEnabled)
     {
-        std::cout << "Computing gravitational force" << std::endl;
+        std::cout << "Computing gravitational force\n";
         gravity_force(q, F, H);
     }
     if (params_.springsEnabled)
     {
-        std::cout << "Computing spring force" << std::endl;
+        std::cout << "Computing spring force\n";
         spring_force(q, F, H);
     }
     if (params_.floorEnabled)
     {
-        std::cout << "Computing floor force" << std::endl;
+        std::cout << "Computing floor force\n";
         floor_force(q, qdot, F, H);
     }
     if (params_.dampingEnabled)
     {
-        std::cout << "Computing viscous damping force" << std::endl;
+        std::cout << "Computing viscous damping force\n";
         viscous_damping(q, qprev, F, H);
     }
 }
