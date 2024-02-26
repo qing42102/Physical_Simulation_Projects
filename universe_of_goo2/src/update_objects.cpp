@@ -24,9 +24,15 @@ void addParticle(double x, double y)
         double dist = (pos - newpos).norm();
         if (dist <= params_.maxSpringDist)
         {
-            // TODO
             // Also support rigid and flexible rods
-            connectors_.push_back(new Spring(newid, i, 0, params_.springStiffness / dist, dist, true));
+            if (params_.connectorType == SimParameters::CT_SPRING)
+            {
+                connectors_.push_back(new Spring(newid, i, 0, params_.springStiffness / dist, dist, true));
+            }
+            else if (params_.connectorType == SimParameters::CT_RIGIDROD)
+            {
+                connectors_.push_back(new RigidRod(newid, i, 0, dist));
+            }
         }
     }
 }
@@ -71,26 +77,25 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &lambd
     Delete springs that are connected to a particle that is about to be deleted
     @param particle_index Index of the particle to be deleted
  */
-void delete_unconnected_springs(int particle_index)
+void delete_unconnected_connectors(int particle_index)
 {
     std::vector<Connector *> new_connectors_;
     for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = dynamic_cast<Spring *>(*it);
         // Delete springs connected to this particle
-        if (spring->p1 == particle_index || spring->p2 == particle_index)
+        if ((*it)->p1 == particle_index || (*it)->p2 == particle_index)
         {
-            delete spring;
+            delete *it;
         }
-        // Keep the spring in the new list if it's not connected to the deleted particle
+        // Keep the connector in the new list if it's not connected to the deleted particle
         else
         {
             // Update the indices of the springs that are connected to particles with higher indices
-            if (spring->p1 > particle_index)
-                spring->p1--;
-            if (spring->p2 > particle_index)
-                spring->p2--;
-            new_connectors_.push_back(spring);
+            if ((*it)->p1 > particle_index)
+                (*it)->p1--;
+            if ((*it)->p2 > particle_index)
+                (*it)->p2--;
+            new_connectors_.push_back(*it);
         }
     }
     connectors_ = new_connectors_;
@@ -132,38 +137,37 @@ double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d
 }
 
 /*
-    Delete springs that are too close to a saw
+    Delete springs or rigid rods that are too close to a saw
 */
-void delete_sawed_springs()
+void delete_sawed_connectors()
 {
     std::vector<Connector *> new_connectors_;
     for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = dynamic_cast<Spring *>(*it);
-        Eigen::Vector2d pos1 = particles_[spring->p1].pos;
-        Eigen::Vector2d pos2 = particles_[spring->p2].pos;
+        Eigen::Vector2d pos1 = particles_[(*it)->p1].pos;
+        Eigen::Vector2d pos2 = particles_[(*it)->p2].pos;
 
-        bool delete_spring = false;
+        bool delete_connector = false;
         for (std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
         {
-            // Delete springs that are too close to a saw
-            // The distance between the saw's center and the line formed by the spring's endpoints is less than the saw's radius
+            // Delete connectors that are too close to a saw
+            // The distance between the saw's center and the line formed by the connector's endpoints is less than the saw's radius
             double dist = point_to_finite_line_dist(saw->pos, pos1, pos2);
             if (dist < saw->radius)
             {
-                delete_spring = true;
+                delete_connector = true;
                 break;
             }
         }
 
-        if (delete_spring)
+        if (delete_connector)
         {
-            delete spring;
+            delete *it;
         }
-        // Keep the spring in the new list if it doesn't touch a saw
+        // Keep the connector in the new list if it doesn't touch a saw
         else
         {
-            new_connectors_.push_back(spring);
+            new_connectors_.push_back(*it);
         }
     }
     connectors_ = new_connectors_;
@@ -192,7 +196,7 @@ void delete_sawed_particles()
 
         if (delete_particle)
         {
-            delete_unconnected_springs(i);
+            delete_unconnected_connectors(i);
         }
         // Keep the particle in the new list if it doesn't touch a saw
         else
@@ -211,21 +215,28 @@ void pruneOverstrainedSprings()
     // Delete springs that have too high strain
     for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = dynamic_cast<Spring *>(*it);
-        Eigen::Vector2d pos1 = particles_[spring->p1].pos;
-        Eigen::Vector2d pos2 = particles_[spring->p2].pos;
-
-        double dist = (pos1 - pos2).norm();
-        double strain = (dist - spring->restlen) / spring->restlen;
-
-        if (strain > params_.maxSpringStrain)
+        if ((*it)->getType() == SimParameters::CT_SPRING)
         {
-            delete spring;
+            Spring *spring = dynamic_cast<Spring *>(*it);
+            Eigen::Vector2d pos1 = particles_[spring->p1].pos;
+            Eigen::Vector2d pos2 = particles_[spring->p2].pos;
+
+            double dist = (pos1 - pos2).norm();
+            double strain = (dist - spring->restlen) / spring->restlen;
+
+            if (strain > params_.maxSpringStrain)
+            {
+                delete spring;
+            }
+            // Keep the spring in the new list if it's not overstrained
+            else
+            {
+                new_connectors_.push_back(spring);
+            }
         }
-        // Keep the spring in the new list if it's not overstrained
         else
         {
-            new_connectors_.push_back(spring);
+            new_connectors_.push_back(*it);
         }
     }
 
@@ -241,10 +252,9 @@ void delete_offscreen_particles()
 
     for (uint i = 0; i < particles_.size(); i++)
     {
-        // Delete particles that are offscreen
         if (particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0)
         {
-            delete_unconnected_springs(i);
+            delete_unconnected_connectors(i);
         }
         // Keep the particle in a new list if it's not offscreen
         else

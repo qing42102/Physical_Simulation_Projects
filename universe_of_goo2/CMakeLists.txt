@@ -65,7 +65,7 @@ endif()
 
 # Add polyscope
 message("\n\n == CMAKE recursively building Polyscope\n")
-add_subdirectory("deps/polyscope")
+add_subdirectory("../universe_of_goo/deps/polyscope" "${CMAKE_CURRENT_BINARY_DIR}/polyscope_build")
 
 include(libigl)
 

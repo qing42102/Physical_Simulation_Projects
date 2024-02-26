@@ -256,7 +256,7 @@ bool simulateOneStep()
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
     delete_sawed_particles();
-    delete_sawed_springs();
+    delete_sawed_connectors();
 
     // Cleanup: delete offscreen particles
     delete_offscreen_particles();

@@ -89,5 +89,6 @@ public:
 extern std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
 extern std::vector<Connector *> connectors_;
 extern std::vector<Saw> saws_;
+extern std::vector<BendingStencil> bendingStencils_;
 
 #endif
