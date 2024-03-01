@@ -4,16 +4,8 @@
 #include "SimParameters.h"
 #include "SceneObjects.h"
 
-void addParticle(double x, double y)
+void add_connectors(int newid, Eigen::Vector2d newpos)
 {
-    Eigen::Vector2d newpos(x, y);
-    double mass = params_.particleMass;
-    if (params_.particleFixed)
-        mass = std::numeric_limits<double>::infinity();
-
-    int newid = particles_.size();
-    particles_.push_back(Particle(newpos, mass, params_.particleFixed, false));
-
     int numparticles = particles_.size() - 1;
 
     for (int i = 0; i < numparticles; i++)
@@ -33,8 +25,37 @@ void addParticle(double x, double y)
             {
                 connectors_.push_back(new RigidRod(newid, i, 0, dist));
             }
+            else if (params_.connectorType == SimParameters::CT_FLEXROD)
+            {
+                int num_segments = std::max(2, params_.rodSegments);
+                Eigen::Vector2d segment = (pos - newpos) / num_segments;
+                double segment_dist = segment.norm();
+
+                double flex_rod_mass = params_.rodDensity * segment_dist;
+                double flex_rod_stiffness = params_.rodStretchingStiffness / segment_dist;
+
+                for (int i = 1; i < num_segments; i++)
+                {
+                    particles_.push_back(Particle(newpos + i * segment, 0, false, true));
+                    connectors_.push_back(new Spring(newid + i - 1, newid + i, flex_rod_mass, flex_rod_stiffness, segment_dist, false));
+                }
+                connectors_.push_back(new Spring(newid + num_segments - 1, i, flex_rod_mass, flex_rod_stiffness, segment_dist, false));
+            }
         }
     }
+}
+
+void addParticle(double x, double y)
+{
+    Eigen::Vector2d newpos(x, y);
+    double mass = params_.particleMass;
+    if (params_.particleFixed)
+        mass = std::numeric_limits<double>::infinity();
+
+    int newid = particles_.size();
+    particles_.push_back(Particle(newpos, mass, params_.particleFixed, false));
+
+    add_connectors(newid, newpos);
 }
 
 void addSaw(double x, double y)
