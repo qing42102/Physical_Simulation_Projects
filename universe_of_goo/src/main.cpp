@@ -20,7 +20,7 @@ bool running_;
 SimParameters params_;
 double time_;
 std::vector<Particle, Eigen::aligned_allocator<Particle>> particles_;
-std::vector<Spring *> connectors_;
+std::vector<Connector *> connectors_;
 std::vector<Saw> saws_;
 
 Eigen::MatrixXd renderQ;
@@ -39,7 +39,7 @@ std::deque<MouseClick> mouseClicks_;
 double getTotalParticleMass(int idx)
 {
     double mass = particles_[idx].mass;
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         if ((*it)->p1 == idx || (*it)->p2 == idx)
             mass += 0.5 * (*it)->mass;
@@ -51,7 +51,7 @@ void initSimulation()
 {
     time_ = 0;
     particles_.clear();
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
         delete *it;
     connectors_.clear();
     saws_.clear();
@@ -101,7 +101,7 @@ void updateRenderGeometry()
         idx += 6;
     }
 
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
         Eigen::Vector3d color;
         if ((*it)->associatedBendingStencils.empty())

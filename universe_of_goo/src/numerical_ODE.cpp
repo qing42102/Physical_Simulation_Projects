@@ -23,7 +23,6 @@ void computeMassInverse(Eigen::SparseMatrix<double> &Minv)
         triplet_list.push_back(Eigen::Triplet<double>(2 * i + 1, 2 * i + 1, 1.0 / particles_[i].mass));
     }
 
-    Minv = Eigen::SparseMatrix<double>(2 * particles_.size(), 2 * particles_.size());
     Minv.setFromTriplets(triplet_list.begin(), triplet_list.end());
 }
 

@@ -1,5 +1,3 @@
-#include <algorithm>
-
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 
@@ -41,12 +39,9 @@ void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &qprev, Eigen::Vecto
     //  Pack the degrees of freedom and DOF velocities into global configuration vectors
     for (uint i = 0; i < particles_.size(); i++)
     {
-        q(2 * i) = particles_[i].pos[0];
-        q(2 * i + 1) = particles_[i].pos[1];
-        qprev(2 * i) = particles_[i].prevpos[0];
-        qprev(2 * i + 1) = particles_[i].prevpos[1];
-        qdot(2 * i) = particles_[i].vel[0];
-        qdot(2 * i + 1) = particles_[i].vel[1];
+        q.segment<2>(2 * i) = particles_[i].pos;
+        qprev.segment<2>(2 * i) = particles_[i].prevpos;
+        qdot.segment<2>(2 * i) = particles_[i].vel;
     }
 }
 
@@ -56,10 +51,8 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
     for (uint i = 0; i < particles_.size(); i++)
     {
         particles_[i].prevpos = particles_[i].pos;
-        particles_[i].pos[0] = q(2 * i);
-        particles_[i].pos[1] = q(2 * i + 1);
-        particles_[i].vel[0] = qdot(2 * i);
-        particles_[i].vel[1] = qdot(2 * i + 1);
+        particles_[i].pos = q.segment<2>(2 * i);
+        particles_[i].vel = qdot.segment<2>(2 * i);
     }
 }
 
@@ -69,10 +62,10 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
  */
 void delete_unconnected_springs(int particle_index)
 {
-    std::vector<Spring *> new_connectors_;
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    std::vector<Connector *> new_connectors_;
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = *it;
+        Spring *spring = dynamic_cast<Spring *>(*it);
         // Delete springs connected to this particle
         if (spring->p1 == particle_index || spring->p2 == particle_index)
         {
@@ -132,10 +125,10 @@ double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d
 */
 void delete_sawed_springs()
 {
-    std::vector<Spring *> new_connectors_;
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    std::vector<Connector *> new_connectors_;
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = *it;
+        Spring *spring = dynamic_cast<Spring *>(*it);
         Eigen::Vector2d pos1 = particles_[spring->p1].pos;
         Eigen::Vector2d pos2 = particles_[spring->p2].pos;
 
@@ -202,12 +195,12 @@ void delete_sawed_particles()
 
 void pruneOverstrainedSprings()
 {
-    std::vector<Spring *> new_connectors_;
+    std::vector<Connector *> new_connectors_;
 
     // Delete springs that have too high strain
-    for (std::vector<Spring *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
     {
-        Spring *spring = *it;
+        Spring *spring = dynamic_cast<Spring *>(*it);
         Eigen::Vector2d pos1 = particles_[spring->p1].pos;
         Eigen::Vector2d pos2 = particles_[spring->p2].pos;
 

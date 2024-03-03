@@ -44,8 +44,10 @@ void spring_force(const Eigen::VectorXd &q,
 
     for (uint i = 0; i < connectors_.size(); i++)
     {
-        double L = connectors_[i]->restlen;
-        double k = connectors_[i]->stiffness / L;
+        Spring *spring = dynamic_cast<Spring *>(connectors_[i]);
+
+        double L = spring->restlen;
+        double k = spring->stiffness / L;
 
         int p1_index = connectors_[i]->p1;
         int p2_index = connectors_[i]->p2;
