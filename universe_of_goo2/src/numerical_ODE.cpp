@@ -72,6 +72,35 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     return x;
 }
 
+void penalty_method(const Eigen::VectorXd &q, Eigen::VectorXd &F)
+{
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
+        {
+            RigidRod *rod = dynamic_cast<RigidRod *>(connectors_[i]);
+            Eigen::Vector2d pos1 = q.segment(2 * rod->p1, 2);
+            Eigen::Vector2d pos2 = q.segment(2 * rod->p2, 2);
+
+            Eigen::Vector2d dir = pos1 - pos2;
+            double dist_squared = dir.squaredNorm();
+
+            Eigen::Vector2d local_force = 4 * params_.penaltyStiffness * (dist_squared - pow(rod->length, 2)) * dir;
+
+            F.segment(2 * rod->p1, 2) += -local_force;
+            F.segment(2 * rod->p2, 2) += local_force;
+        }
+    }
+}
+
+void step_project_method()
+{
+}
+
+void lagrange_multiplier_method()
+{
+}
+
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::VectorXd &qdot)
 {
     Eigen::VectorXd F;
@@ -84,8 +113,35 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Ve
 
     q += params_.timeStep * qdot;
     computeForceAndHessian(q, oldq, F, H);
-    qdot += params_.timeStep * Minv * F;
 
-    // TODO
     // Modify the time integrator to handle constraints, based on the value of params_.constraintHandling
+    switch (params_.constraintHandling)
+    {
+    case SimParameters::CH_PENALTY:
+    {
+        penalty_method(q, F);
+        qdot += params_.timeStep * Minv * F;
+        break;
+    }
+
+    case SimParameters::CH_STEPPROJECT:
+    {
+        qdot += params_.timeStep * Minv * F;
+        step_project_method();
+        break;
+    }
+
+    case SimParameters::CH_LAGRANGEMULT:
+    {
+        lagrange_multiplier_method();
+        qdot += params_.timeStep * Minv * F;
+        break;
+    }
+
+    default:
+    {
+        qdot += params_.timeStep * Minv * F;
+        break;
+    }
+    }
 }
