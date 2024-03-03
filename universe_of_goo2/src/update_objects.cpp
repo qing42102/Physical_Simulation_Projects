@@ -4,7 +4,24 @@
 #include "SimParameters.h"
 #include "SceneObjects.h"
 
-void add_connectors(int newid, Eigen::Vector2d newpos)
+void add_hinges(const int &num_segments, const double &segment_len)
+{
+    // The indices of the springs added by flexible rods
+    for (uint i = connectors_.size() - num_segments; i < connectors_.size() - 1; i++)
+    {
+        Spring *spring1 = dynamic_cast<Spring *>(connectors_[i]);
+        Spring *spring2 = dynamic_cast<Spring *>(connectors_[i + 1]);
+
+        double hinge_stiffness = 2 * params_.rodBendingStiffness / pow(segment_len, 2);
+        // Add a bending hinge between each triplet of particles
+        bendingStencils_.push_back(BendingStencil(spring1->p1, spring1->p2, spring2->p2, hinge_stiffness));
+
+        spring1->associatedBendingStencils.insert(bendingStencils_.size() - 1);
+        spring2->associatedBendingStencils.insert(bendingStencils_.size() - 1);
+    }
+}
+
+void add_connectors(const int &newid, const Eigen::Vector2d &newpos)
 {
     int numparticles = particles_.size() - 1;
 
@@ -29,17 +46,32 @@ void add_connectors(int newid, Eigen::Vector2d newpos)
             {
                 int num_segments = std::max(2, params_.rodSegments);
                 Eigen::Vector2d segment = (pos - newpos) / num_segments;
-                double segment_dist = segment.norm();
+                double segment_len = segment.norm();
 
-                double flex_rod_mass = params_.rodDensity * segment_dist;
-                double flex_rod_stiffness = params_.rodStretchingStiffness / segment_dist;
+                double flex_rod_mass = params_.rodDensity * segment_len;
+                double flex_rod_stiffness = params_.rodStretchingStiffness / segment_len;
 
-                for (int i = 1; i < num_segments; i++)
+                // Mimic a flexible rod with a chain of particles connected by springs
+                for (int j = 1; j < num_segments; j++)
                 {
-                    particles_.push_back(Particle(newpos + i * segment, 0, false, true));
-                    connectors_.push_back(new Spring(newid + i - 1, newid + i, flex_rod_mass, flex_rod_stiffness, segment_dist, false));
+                    // The particles are equally spaced along the rod starting from the new particle
+                    particles_.push_back(Particle(newpos + j * segment, 0, false, true));
+
+                    if (j == 1)
+                    {
+                        // Connect the first particle of the flexible rod to the new particle
+                        connectors_.push_back(new Spring(newid, particles_.size() - 1, flex_rod_mass, flex_rod_stiffness, segment_len, false));
+                    }
+                    else
+                    {
+                        // Connect the previous particle of the flexible rod to the current one
+                        connectors_.push_back(new Spring(particles_.size() - 2, particles_.size() - 1, flex_rod_mass, flex_rod_stiffness, segment_len, false));
+                    }
                 }
-                connectors_.push_back(new Spring(newid + num_segments - 1, i, flex_rod_mass, flex_rod_stiffness, segment_dist, false));
+                // The last particlee of the flexible rod is connected to the original particle
+                connectors_.push_back(new Spring(particles_.size() - 1, i, flex_rod_mass, flex_rod_stiffness, segment_len, false));
+
+                add_hinges(num_segments, segment_len);
             }
         }
     }
@@ -95,34 +127,6 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &lambd
 }
 
 /*
-    Delete springs that are connected to a particle that is about to be deleted
-    @param particle_index Index of the particle to be deleted
- */
-void delete_unconnected_connectors(int particle_index)
-{
-    std::vector<Connector *> new_connectors_;
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-    {
-        // Delete springs connected to this particle
-        if ((*it)->p1 == particle_index || (*it)->p2 == particle_index)
-        {
-            delete *it;
-        }
-        // Keep the connector in the new list if it's not connected to the deleted particle
-        else
-        {
-            // Update the indices of the springs that are connected to particles with higher indices
-            if ((*it)->p1 > particle_index)
-                (*it)->p1--;
-            if ((*it)->p2 > particle_index)
-                (*it)->p2--;
-            new_connectors_.push_back(*it);
-        }
-    }
-    connectors_ = new_connectors_;
-}
-
-/*
     Calculate the distance between a point and an infinite line
     @param p The point
     @param q1 A point on the line
@@ -158,17 +162,51 @@ double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d
 }
 
 /*
-    Delete springs or rigid rods that are too close to a saw
+    Delete particles that are offscreen or too close to a saw
+    @return A list of booleans indicating which particles are about to be deleted
 */
-void delete_sawed_connectors()
+std::vector<bool> detect_particles_to_delete()
 {
-    std::vector<Connector *> new_connectors_;
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
+    std::vector<bool> delete_particle(particles_.size(), false);
+    for (uint i = 0; i < particles_.size(); i++)
     {
-        Eigen::Vector2d pos1 = particles_[(*it)->p1].pos;
-        Eigen::Vector2d pos2 = particles_[(*it)->p2].pos;
+        for (std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
+        {
+            // Delete this particle that is too close to a saw
+            // The distance between the particle and the saw is less than the saw's radius
+            if ((particles_[i].pos - it->pos).norm() < it->radius)
+            {
+                delete_particle[i] = true;
+                break;
+            }
+        }
 
-        bool delete_connector = false;
+        if (!delete_particle[i])
+        {
+            // Delete particles that are offscreen
+            if (particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0)
+            {
+                delete_particle[i] = true;
+            }
+        }
+    }
+
+    return delete_particle;
+}
+
+/*
+    Delete connectors that are too close to a saw or connected to a particle that is about to be deleted
+    @param delete_particles A list of booleans indicating which particles are about to be deleted
+    @return A list of booleans indicating which connectors are about to be deleted
+*/
+std::vector<bool> detect_connectors_to_delete(const std::vector<bool> &delete_particles)
+{
+    std::vector<bool> delete_connector(connectors_.size(), false);
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        Eigen::Vector2d pos1 = particles_[connectors_[i]->p1].pos;
+        Eigen::Vector2d pos2 = particles_[connectors_[i]->p2].pos;
+
         for (std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
         {
             // Delete connectors that are too close to a saw
@@ -176,57 +214,118 @@ void delete_sawed_connectors()
             double dist = point_to_finite_line_dist(saw->pos, pos1, pos2);
             if (dist < saw->radius)
             {
-                delete_connector = true;
+                delete_connector[i] = true;
                 break;
             }
         }
 
-        if (delete_connector)
+        if (!delete_connector[i])
         {
-            delete *it;
-        }
-        // Keep the connector in the new list if it doesn't touch a saw
-        else
-        {
-            new_connectors_.push_back(*it);
+            // Delete connectors that are connected to a particle that is about to be deleted
+            if (delete_particles[connectors_[i]->p1] || delete_particles[connectors_[i]->p2])
+            {
+                delete_connector[i] = true;
+            }
+            else
+            {
+                // Update the indices of the particles that are not deleted to the range [0, particles_.size() - 1]
+                // The indices of the particles that are not deleted are reduced by the number of particles that are deleted before them
+                int p1_deletion = std::count(delete_particles.begin(), delete_particles.begin() + connectors_[i]->p1, true);
+                int p2_deletion = std::count(delete_particles.begin(), delete_particles.begin() + connectors_[i]->p2, true);
+
+                connectors_[i]->p1 -= p1_deletion;
+                connectors_[i]->p2 -= p2_deletion;
+            }
         }
     }
-    connectors_ = new_connectors_;
+
+    return delete_connector;
 }
 
 /*
-    Delete particles that are too close to a saw
+    Delete bending stencils that are associated with connectors that are about to be deleted
+    @param delete_spring A list of booleans indicating which connectors are about to be deleted
+    @return A list of booleans indicating which bending stencils are about to be deleted
 */
-void delete_sawed_particles()
+std::vector<bool> detect_bending_to_delete(const std::vector<bool> &delete_spring)
 {
-    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
-
-    for (uint i = 0; i < particles_.size(); i++)
+    std::vector<bool> delete_bending(bendingStencils_.size(), false);
+    for (uint i = 0; i < connectors_.size(); i++)
     {
-        bool delete_particle = false;
-        for (std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
+        if (delete_spring[i])
         {
-            // Delete this particle that is too close to a saw
-            // The distance between the particle and the saw is less than the saw's radius
-            if ((particles_[i].pos - it->pos).norm() < it->radius)
+            std::set<int> spring_bending_stencils = connectors_[i]->associatedBendingStencils;
+            for (std::set<int>::iterator it = spring_bending_stencils.begin(); it != spring_bending_stencils.end(); ++it)
             {
-                delete_particle = true;
-                break;
+                int index = *it;
+                delete_bending[index] = true;
             }
         }
+    }
 
-        if (delete_particle)
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (!delete_spring[i])
         {
-            delete_unconnected_connectors(i);
+            std::set<int> spring_bending_stencils = connectors_[i]->associatedBendingStencils;
+            std::set<int> new_spring_bending_stencils;
+            for (std::set<int>::iterator it = spring_bending_stencils.begin(); it != spring_bending_stencils.end(); ++it)
+            {
+                // Update the indices of the bending stencils that are not deleted to the range [0, bendingStencils_.size() - 1]
+                // The indices of the bending stencils that are not deleted are reduced by the number of bending stencils that are deleted before them
+                int index = *it;
+                if (!delete_bending[index])
+                {
+                    int bending_deletion = std::count(delete_bending.begin(), delete_bending.begin() + index, true);
+                    new_spring_bending_stencils.insert(index - bending_deletion);
+                }
+            }
+
+            connectors_[i]->associatedBendingStencils = new_spring_bending_stencils;
         }
-        // Keep the particle in the new list if it doesn't touch a saw
-        else
+    }
+
+    return delete_bending;
+}
+
+void delete_objects()
+{
+    std::vector<bool> delete_particles = detect_particles_to_delete();
+    std::vector<bool> delete_connectors = detect_connectors_to_delete(delete_particles);
+    std::vector<bool> delete_bending = detect_bending_to_delete(delete_connectors);
+
+    // Keep the particle in a new list if it's not deleted
+    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        if (!delete_particles[i])
         {
             new_particles_.push_back(particles_[i]);
         }
     }
-
     particles_ = new_particles_;
+
+    // Keep the connector in a new list if it's not deleted
+    std::vector<Connector *> new_connectors_;
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (!delete_connectors[i])
+        {
+            new_connectors_.push_back(connectors_[i]);
+        }
+    }
+    connectors_ = new_connectors_;
+
+    // Delete the bending stencils that are associated with the deleted connectors
+    std::vector<BendingStencil> new_bending_stencils_;
+    for (uint i = 0; i < bendingStencils_.size(); i++)
+    {
+        if (!delete_bending[i])
+        {
+            new_bending_stencils_.push_back(bendingStencils_[i]);
+        }
+    }
+    bendingStencils_ = new_bending_stencils_;
 }
 
 void pruneOverstrainedSprings()
@@ -245,7 +344,7 @@ void pruneOverstrainedSprings()
             double dist = (pos1 - pos2).norm();
             double strain = (dist - spring->restlen) / spring->restlen;
 
-            if (strain > params_.maxSpringStrain)
+            if (spring->canSnap && strain > params_.maxSpringStrain)
             {
                 delete spring;
             }
@@ -262,27 +361,4 @@ void pruneOverstrainedSprings()
     }
 
     connectors_ = new_connectors_;
-}
-
-/*
-    Delete particles that are offscreen
-*/
-void delete_offscreen_particles()
-{
-    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
-
-    for (uint i = 0; i < particles_.size(); i++)
-    {
-        if (particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0)
-        {
-            delete_unconnected_connectors(i);
-        }
-        // Keep the particle in a new list if it's not offscreen
-        else
-        {
-            new_particles_.push_back(particles_[i]);
-        }
-    }
-
-    particles_ = new_particles_;
 }

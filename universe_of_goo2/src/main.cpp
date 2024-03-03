@@ -255,11 +255,7 @@ bool simulateOneStep()
 
     // Cleanup: delete sawed objects and snapped springs
     pruneOverstrainedSprings();
-    delete_sawed_particles();
-    delete_sawed_connectors();
-
-    // Cleanup: delete offscreen particles
-    delete_offscreen_particles();
+    delete_objects();
 
     // Time advances
     time_ += params_.timeStep;
