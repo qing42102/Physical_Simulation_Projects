@@ -1,4 +1,6 @@
 #include <iostream>
+#include <vector>
+#include <cmath>
 
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
@@ -114,8 +116,33 @@ void processFloorForce(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, E
 
 void processBendingForce(const Eigen::VectorXd &q, Eigen::VectorXd &F)
 {
-    // TODO
     // Implement the bending energy and force for ropes
+    for (uint i = 0; i < bendingStencils_.size(); i++)
+    {
+        int p1 = bendingStencils_[i].p1;
+        int p2 = bendingStencils_[i].p2;
+        int p3 = bendingStencils_[i].p3;
+
+        Eigen::Vector3d pos1, pos2, pos3;
+        pos1 << q(2 * p1), q(2 * p1 + 1), 0;
+        pos2 << q(2 * p2), q(2 * p2 + 1), 0;
+        pos3 << q(2 * p3), q(2 * p3 + 1), 0;
+
+        double y = ((pos2 - pos1).cross(pos3 - pos2)).z();
+        double x = (pos2 - pos1).norm() * (pos3 - pos2).norm() + (pos2 - pos1).dot(pos3 - pos2);
+        double theta = 2 * std::atan2(y, x);
+
+        Eigen::Vector2d z_cross;
+        z_cross << (pos2 - pos1)[1], -(pos2 - pos1)[0];
+        Eigen::Vector2d force_i = bendingStencils_[i].kb * theta * z_cross / (pos2 - pos1).squaredNorm();
+        F.segment<2>(2 * p1) += force_i;
+
+        z_cross << (pos3 - pos2)[1], -(pos3 - pos2)[0];
+        Eigen::Vector2d force_k = bendingStencils_[i].kb * theta * z_cross / (pos3 - pos2).squaredNorm();
+        F.segment<2>(2 * p3) += force_k;
+
+        F.segment<2>(2 * p2) += -force_i - force_k;
+    }
 }
 
 void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
