@@ -129,8 +129,26 @@ void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Vect
         qdot.segment<2>(2 * i) = particles_[i].vel;
     }
 
-    // TODO
+    // Count the number of rigid rods, which is the number of constraints
+    int num_rigid_rods = 0;
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
+        {
+            num_rigid_rods++;
+        }
+    }
+
     //  Pack the Lagrange multiplier degrees of freedom into the global configuration vector lambda
+    lambda.resize(num_rigid_rods);
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
+        {
+            RigidRod *rod = dynamic_cast<RigidRod *>(connectors_[i]);
+            lambda[i] = rod->lambda;
+        }
+    }
 }
 
 void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &lambda, const Eigen::VectorXd &qdot)
@@ -144,8 +162,15 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &lambd
         particles_[i].vel = qdot.segment<2>(2 * i);
     }
 
-    // TODO
     // Unpack the configurational Lagrange multipliers back into the RigidRods
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
+        {
+            RigidRod *rod = dynamic_cast<RigidRod *>(connectors_[i]);
+            rod->lambda = lambda[i];
+        }
+    }
 }
 
 /*

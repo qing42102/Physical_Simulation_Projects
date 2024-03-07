@@ -234,8 +234,32 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
     constrain_qdot = unconstrain_qdot + (constrain_q - unconstrain_q) / params_.timeStep;
 }
 
-void lagrange_multiplier_method()
+void lagrange_multiplier_method(const Eigen::VectorXd &q,
+                                Eigen::VectorXd &qdot,
+                                Eigen::VectorXd &lambda,
+                                const Eigen::SparseMatrix<double> &Minv,
+                                const Eigen::VectorXd &F)
 {
+    auto func = [&](Eigen::VectorXd lambda) -> Eigen::VectorXd
+    {
+        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
+        return compute_constraint(input, lambda.size());
+    };
+
+    auto deriv = [&](Eigen::VectorXd lambda) -> Eigen::SparseMatrix<double>
+    {
+        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
+
+        // Chain rule for the derivative of the constraint
+        Eigen::SparseMatrix<double> dx = pow(params_.timeStep, 2) * Minv * compute_constraint_deriv(q, lambda.size()).transpose();
+        Eigen::SparseMatrix<double> dgdx = 2 * compute_constraint_deriv(input, lambda.size());
+        Eigen::SparseMatrix<double> df = dgdx * dx;
+
+        return df;
+    };
+
+    lambda = newton_method(func, deriv, lambda);
+    qdot = qdot + params_.timeStep * Minv * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
 }
 
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::VectorXd &qdot)
@@ -273,8 +297,7 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Ve
 
     case SimParameters::CH_LAGRANGEMULT:
     {
-        lagrange_multiplier_method();
-        qdot += params_.timeStep * Minv * F;
+        lagrange_multiplier_method(q, qdot, lambda, Minv, F);
         break;
     }
 
