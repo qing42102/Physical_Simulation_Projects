@@ -167,6 +167,7 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
         if (particles_[i].fixed)
         {
             Minv_modified.coeffRef(2 * i, 2 * i) = 0;
+            Minv_modified.coeffRef(2 * i + 1, 2 * i + 1) = 0;
         }
     }
 
@@ -179,20 +180,7 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
         Eigen::VectorXd constraint = compute_constraint(q);
         Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q);
 
-        Eigen::VectorXd constraint_multiplier;
-        constraint_multiplier.resize(q.size());
-        constraint_multiplier.setZero();
-        for (uint i = 0; i < connectors_.size(); i++)
-        {
-            if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
-            {
-                RigidRod *rod = dynamic_cast<RigidRod *>(connectors_[i]);
-
-                constraint_multiplier.segment(2 * rod->p1, 2) += lambda(i) * constraint_deriv.block(i, 2 * rod->p1, 1, 2).transpose();
-                constraint_multiplier.segment(2 * rod->p2, 2) += lambda(i) * constraint_deriv.block(i, 2 * rod->p2, 1, 2).transpose();
-            }
-        }
-        constraint_multiplier = Minv_modified * constraint_multiplier;
+        Eigen::VectorXd constraint_multiplier = Minv_modified * constraint_deriv.transpose() * lambda;
 
         Eigen::VectorXd f(q.size() + connectors_.size());
         f << (q - unconstrain_q) + constraint_multiplier, constraint;
@@ -204,10 +192,10 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
         Eigen::VectorXd q = state.segment(0, 2 * particles_.size());
         Eigen::VectorXd lambda = state.segment(2 * particles_.size(), connectors_.size());
 
-        Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q);
-
         Eigen::SparseMatrix<double> sparse_I = Eigen::MatrixXd::Identity(q.size(), q.size()).sparseView();
 
+        // Upper left block of the Jacobian
+        Eigen::SparseMatrix<double> upper_left(q.size(), q.size());
         std::vector<Eigen::Triplet<double>> triplet_list;
         for (uint i = 0; i < connectors_.size(); i++)
         {
@@ -215,28 +203,67 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
             {
                 RigidRod *rod = dynamic_cast<RigidRod *>(connectors_[i]);
 
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1, 2 * rod->p1, 1 + 2 * lambda(i)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1 + 1, 2 * rod->p1 + 1, 2 * lambda(i)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2, 2 * rod->p2, 1 - 2 * lambda(i)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2 + 1, 2 * rod->p2 + 1, -2 * lambda(i)));
-
-                triplet_list.push_back(Eigen::Triplet<double>(q.size() + i, 2 * rod->p1, Minv_modified.coeff(2 * rod->p1, 2 * rod->p1) * constraint_deriv.coeff(i, 2 * rod->p1)));
-                triplet_list.push_back(Eigen::Triplet<double>(q.size() + i, 2 * rod->p1 + 1, Minv_modified.coeff(2 * rod->p1 + 1, 2 * rod->p1 + 1) * constraint_deriv.coeff(i, 2 * rod->p1 + 1)));
-                triplet_list.push_back(Eigen::Triplet<double>(q.size() + i, 2 * rod->p2, Minv_modified.coeff(2 * rod->p2, 2 * rod->p2) * constraint_deriv.coeff(i, 2 * rod->p2)));
-                triplet_list.push_back(Eigen::Triplet<double>(q.size() + i, 2 * rod->p2 + 1, Minv_modified.coeff(2 * rod->p2 + 1, 2 * rod->p2 + 1) * constraint_deriv.coeff(i, 2 * rod->p2 + 1)));
-
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1, q.size() + i, constraint_deriv.coeff(i, 2 * rod->p1)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1 + 1, q.size() + i, constraint_deriv.coeff(i, 2 * rod->p1 + 1)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2, q.size() + i, constraint_deriv.coeff(i, 2 * rod->p2)));
-                triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2 + 1, q.size() + i, constraint_deriv.coeff(i, 2 * rod->p2 + 1)));
+                for (int j = 0; j < 2; j++)
+                {
+                    for (int k = 0; k < 2; k++)
+                    {
+                        // Derivative of the constraint with respect to q
+                        // Since it's a diagonal matrix, the values only exists when j = k
+                        if (j == k)
+                        {
+                            triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1 + j, 2 * rod->p1 + k, 2 * lambda(i)));
+                            triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2 + j, 2 * rod->p2 + k, 2 * lambda(i)));
+                            triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p1 + j, 2 * rod->p2 + k, -2 * lambda(i)));
+                            triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2 + j, 2 * rod->p1 + k, -2 * lambda(i)));
+                        }
+                    }
+                }
             }
         }
+        upper_left.setFromTriplets(triplet_list.begin(), triplet_list.end());
+        upper_left = Minv_modified * upper_left + sparse_I;
+
+        // Lower left block of the Jacobian
+        Eigen::SparseMatrix<double> lower_left = compute_constraint_deriv(q);
+
+        // Upper right block of the Jacobian
+        Eigen::SparseMatrix<double> upper_right = Minv_modified * lower_left.transpose();
+
         Eigen::SparseMatrix<double> df(q.size() + connectors_.size(), q.size() + connectors_.size());
+        triplet_list.clear();
+        triplet_list.reserve(upper_left.nonZeros() + upper_right.nonZeros() + lower_left.nonZeros());
+        // Collect triplets from upper left matrix
+        for (int i = 0; i < upper_left.outerSize(); i++)
+        {
+            for (Eigen::SparseMatrix<double>::InnerIterator it(upper_left, i); it; ++it)
+            {
+                triplet_list.push_back(Eigen::Triplet<double>(it.row(), it.col(), it.value()));
+            }
+        }
+
+        // Collect triplets from upper right matrix
+        for (int i = 0; i < upper_right.outerSize(); i++)
+        {
+            for (Eigen::SparseMatrix<double>::InnerIterator it(upper_right, i); it; ++it)
+            {
+                triplet_list.push_back(Eigen::Triplet<double>(it.row(), it.col() + upper_left.cols(), it.value()));
+            }
+        }
+
+        // Collect triplets from lower left matrix
+        for (int i = 0; i < lower_left.outerSize(); i++)
+        {
+            for (Eigen::SparseMatrix<double>::InnerIterator it(lower_left, i); it; ++it)
+            {
+                triplet_list.push_back(Eigen::Triplet<double>(it.row() + upper_left.rows(), it.col(), it.value()));
+            }
+        }
         df.setFromTriplets(triplet_list.begin(), triplet_list.end());
 
         return df;
     };
 
+    // State vector is concatenation of q and lambda
     Eigen::VectorXd initial_state(2 * particles_.size() + connectors_.size());
     initial_state.segment(0, 2 * particles_.size()) = unconstrain_q;
     initial_state.segment(2 * particles_.size(), connectors_.size()) = Eigen::VectorXd::Zero(connectors_.size());
@@ -311,6 +338,8 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Ve
         Eigen::VectorXd constrain_q;
         Eigen::VectorXd constrain_qdot;
         step_project_method(q, qdot, Minv, constrain_q, constrain_qdot);
+        q = constrain_q;
+        qdot = constrain_qdot;
 
         std::cout << "Step and project method\n";
         break;

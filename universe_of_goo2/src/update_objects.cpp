@@ -28,6 +28,56 @@ void add_hinges(const int &num_segments, const double &segment_len)
     }
 }
 
+void add_flexible_rods(const Eigen::Vector2d &pos,
+                       const Eigen::Vector2d &newpos,
+                       const int &id,
+                       const int &newid)
+{
+    int num_segments = std::max(2, params_.rodSegments);
+    Eigen::Vector2d segment = (pos - newpos) / num_segments;
+    double segment_len = segment.norm();
+
+    double flex_rod_mass = params_.rodDensity * segment_len;
+    double flex_rod_stiffness = params_.rodStretchingStiffness / segment_len;
+
+    // Mimic a flexible rod with a chain of particles connected by springs
+    for (int j = 1; j < num_segments; j++)
+    {
+        // The particles are equally spaced along the rod starting from the new particle
+        particles_.push_back(Particle(newpos + j * segment, 0, false, true));
+
+        if (j == 1)
+        {
+            // Connect the first particle of the flexible rod to the new particle
+            connectors_.push_back(new Spring(newid,
+                                             particles_.size() - 1,
+                                             flex_rod_mass,
+                                             flex_rod_stiffness,
+                                             segment_len,
+                                             false));
+        }
+        else
+        {
+            // Connect the previous particle of the flexible rod to the current one
+            connectors_.push_back(new Spring(particles_.size() - 2,
+                                             particles_.size() - 1,
+                                             flex_rod_mass,
+                                             flex_rod_stiffness,
+                                             segment_len,
+                                             false));
+        }
+    }
+    // The last particle of the flexible rod is connected to the original particle
+    connectors_.push_back(new Spring(particles_.size() - 1,
+                                     id,
+                                     flex_rod_mass,
+                                     flex_rod_stiffness,
+                                     segment_len,
+                                     false));
+
+    add_hinges(num_segments, segment_len);
+}
+
 void add_connectors(const int &newid, const Eigen::Vector2d &newpos)
 {
     int numparticles = particles_.size() - 1;
@@ -51,49 +101,7 @@ void add_connectors(const int &newid, const Eigen::Vector2d &newpos)
             }
             else if (params_.connectorType == SimParameters::CT_FLEXROD)
             {
-                int num_segments = std::max(2, params_.rodSegments);
-                Eigen::Vector2d segment = (pos - newpos) / num_segments;
-                double segment_len = segment.norm();
-
-                double flex_rod_mass = params_.rodDensity * segment_len;
-                double flex_rod_stiffness = params_.rodStretchingStiffness / segment_len;
-
-                // Mimic a flexible rod with a chain of particles connected by springs
-                for (int j = 1; j < num_segments; j++)
-                {
-                    // The particles are equally spaced along the rod starting from the new particle
-                    particles_.push_back(Particle(newpos + j * segment, 0, false, true));
-
-                    if (j == 1)
-                    {
-                        // Connect the first particle of the flexible rod to the new particle
-                        connectors_.push_back(new Spring(newid,
-                                                         particles_.size() - 1,
-                                                         flex_rod_mass,
-                                                         flex_rod_stiffness,
-                                                         segment_len,
-                                                         false));
-                    }
-                    else
-                    {
-                        // Connect the previous particle of the flexible rod to the current one
-                        connectors_.push_back(new Spring(particles_.size() - 2,
-                                                         particles_.size() - 1,
-                                                         flex_rod_mass,
-                                                         flex_rod_stiffness,
-                                                         segment_len,
-                                                         false));
-                    }
-                }
-                // The last particle of the flexible rod is connected to the original particle
-                connectors_.push_back(new Spring(particles_.size() - 1,
-                                                 i,
-                                                 flex_rod_mass,
-                                                 flex_rod_stiffness,
-                                                 segment_len,
-                                                 false));
-
-                add_hinges(num_segments, segment_len);
+                add_flexible_rods(pos, newpos, i, newid);
             }
         }
     }
@@ -130,7 +138,6 @@ void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Vect
     }
 
     // Pack the Lagrange multiplier degrees of freedom into the global configuration vector lambda
-    // The number of constraints is equal to the number of connectors
     // For connectors that are not rigid rods, the Lagrange multipliers are zero
     lambda.resize(connectors_.size());
     lambda.setZero();
