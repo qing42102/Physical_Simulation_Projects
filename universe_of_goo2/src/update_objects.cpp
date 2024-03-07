@@ -129,18 +129,11 @@ void buildConfiguration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Vect
         qdot.segment<2>(2 * i) = particles_[i].vel;
     }
 
-    // Count the number of rigid rods, which is the number of constraints
-    int num_rigid_rods = 0;
-    for (uint i = 0; i < connectors_.size(); i++)
-    {
-        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
-        {
-            num_rigid_rods++;
-        }
-    }
-
-    //  Pack the Lagrange multiplier degrees of freedom into the global configuration vector lambda
-    lambda.resize(num_rigid_rods);
+    // Pack the Lagrange multiplier degrees of freedom into the global configuration vector lambda
+    // The number of constraints is equal to the number of connectors
+    // For connectors that are not rigid rods, the Lagrange multipliers are zero
+    lambda.resize(connectors_.size());
+    lambda.setZero();
     for (uint i = 0; i < connectors_.size(); i++)
     {
         if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
@@ -388,10 +381,17 @@ void delete_objects()
     {
         if (!delete_bending[i])
         {
+            // Update the indices of the particles that are not deleted to the range [0, particles_.size() - 1]
+            bendingStencils_[i].p1 -= std::count(delete_particles.begin(), delete_particles.begin() + bendingStencils_[i].p1, true);
+            bendingStencils_[i].p2 -= std::count(delete_particles.begin(), delete_particles.begin() + bendingStencils_[i].p2, true);
+            bendingStencils_[i].p3 -= std::count(delete_particles.begin(), delete_particles.begin() + bendingStencils_[i].p3, true);
+
             new_bending_stencils_.push_back(bendingStencils_[i]);
         }
     }
     bendingStencils_ = new_bending_stencils_;
+
+    std::cout << "Delete sawed objects\n";
 }
 
 void pruneOverstrainedSprings()

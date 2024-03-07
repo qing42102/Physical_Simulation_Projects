@@ -245,6 +245,8 @@ void updateRenderGeometry()
 
 bool simulateOneStep()
 {
+    system("clear");
+
     // Create configurational vectors
     Eigen::VectorXd q, lambda, qdot;
     buildConfiguration(q, lambda, qdot);
@@ -259,6 +261,8 @@ bool simulateOneStep()
 
     // Time advances
     time_ += params_.timeStep;
+    std::cout << "Time: " << time_ << "\n";
+
     return false;
 }
 

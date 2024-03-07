@@ -53,7 +53,7 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
         Eigen::SparseMatrix<double> deriv_val = deriv_func(x);
 
         // Solve [df] (x_{i+1} - x_i) = -f(x_i)
-        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+        Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
         solver.compute(deriv_val);
         if (solver.info() != Eigen::Success)
         {
@@ -72,9 +72,13 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     return x;
 }
 
-Eigen::SparseMatrix<double> compute_constraint_deriv(const Eigen::VectorXd &q, const int &num_rigid_rods)
+/*
+    Compute the constraint derivatives, 2 * (pos1 - pos2)
+    The dimension of output is the number of constraints x the number of degrees of freedom
+*/
+Eigen::SparseMatrix<double> compute_constraint_deriv(const Eigen::VectorXd &q)
 {
-    Eigen::SparseMatrix<double> constrain_deriv(num_rigid_rods, q.size());
+    Eigen::SparseMatrix<double> constrain_deriv(connectors_.size(), q.size());
     std::vector<Eigen::Triplet<double>> triplet_list;
     for (uint i = 0; i < connectors_.size(); i++)
     {
@@ -96,9 +100,14 @@ Eigen::SparseMatrix<double> compute_constraint_deriv(const Eigen::VectorXd &q, c
     return constrain_deriv;
 }
 
-Eigen::VectorXd compute_constraint(const Eigen::VectorXd &q, const int &num_rigid_rods)
+/*
+    Compute the constraint, ||pos1 - pos2||^2 - length^2
+    The dimension of output is the number of constraints
+ */
+Eigen::VectorXd compute_constraint(const Eigen::VectorXd &q)
 {
-    Eigen::VectorXd constraint(num_rigid_rods);
+    Eigen::VectorXd constraint(connectors_.size());
+    constraint.setZero();
     for (uint i = 0; i < connectors_.size(); i++)
     {
         if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
@@ -113,6 +122,11 @@ Eigen::VectorXd compute_constraint(const Eigen::VectorXd &q, const int &num_rigi
     return constraint;
 }
 
+/*
+    Compute the penalty method for the constraints
+    The penalty force is F = -4 * k * (||pos1 - pos2||^2 - length^2) * (pos1 - pos2)
+    Connectors that are not rigid rods have no constraint
+*/
 void penalty_method(const Eigen::VectorXd &q, Eigen::VectorXd &F)
 {
     for (uint i = 0; i < connectors_.size(); i++)
@@ -134,21 +148,19 @@ void penalty_method(const Eigen::VectorXd &q, Eigen::VectorXd &F)
     }
 }
 
+/*
+    Compute the step and project method for the constraints
+    Take an unconstrained step using the time integrator
+    Then project the new position to satisfy the constraints
+    Connectors that are not rigid rods have no constraint
+*/
 void step_project_method(const Eigen::VectorXd &unconstrain_q,
                          const Eigen::VectorXd &unconstrain_qdot,
                          const Eigen::SparseMatrix<double> &Minv,
                          Eigen::VectorXd &constrain_q,
                          Eigen::VectorXd &constrain_qdot)
 {
-    int num_rigid_rods = 0;
-    for (uint i = 0; i < connectors_.size(); i++)
-    {
-        if (connectors_[i]->getType() == SimParameters::CT_RIGIDROD)
-        {
-            num_rigid_rods++;
-        }
-    }
-
+    // Modify the mass matrix to set the mass to 0 for fixed particles
     Eigen::SparseMatrix<double> Minv_modified = Minv;
     for (uint i = 0; i < particles_.size(); i++)
     {
@@ -162,10 +174,10 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
     auto func = [&](Eigen::VectorXd state) -> Eigen::VectorXd
     {
         Eigen::VectorXd q = state.segment(0, 2 * particles_.size());
-        Eigen::VectorXd lambda = state.segment(2 * particles_.size(), num_rigid_rods);
+        Eigen::VectorXd lambda = state.segment(2 * particles_.size(), connectors_.size());
 
-        Eigen::VectorXd constraint = compute_constraint(q, num_rigid_rods);
-        Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q, num_rigid_rods);
+        Eigen::VectorXd constraint = compute_constraint(q);
+        Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q);
 
         Eigen::VectorXd constraint_multiplier;
         constraint_multiplier.resize(q.size());
@@ -182,7 +194,7 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
         }
         constraint_multiplier = Minv_modified * constraint_multiplier;
 
-        Eigen::VectorXd f(q.size() + num_rigid_rods);
+        Eigen::VectorXd f(q.size() + connectors_.size());
         f << (q - unconstrain_q) + constraint_multiplier, constraint;
         return f;
     };
@@ -190,9 +202,9 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
     auto deriv = [&](Eigen::VectorXd state) -> Eigen::SparseMatrix<double>
     {
         Eigen::VectorXd q = state.segment(0, 2 * particles_.size());
-        Eigen::VectorXd lambda = state.segment(2 * particles_.size(), num_rigid_rods);
+        Eigen::VectorXd lambda = state.segment(2 * particles_.size(), connectors_.size());
 
-        Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q, num_rigid_rods);
+        Eigen::SparseMatrix<double> constraint_deriv = compute_constraint_deriv(q);
 
         Eigen::SparseMatrix<double> sparse_I = Eigen::MatrixXd::Identity(q.size(), q.size()).sparseView();
 
@@ -219,21 +231,26 @@ void step_project_method(const Eigen::VectorXd &unconstrain_q,
                 triplet_list.push_back(Eigen::Triplet<double>(2 * rod->p2 + 1, q.size() + i, constraint_deriv.coeff(i, 2 * rod->p2 + 1)));
             }
         }
-        Eigen::SparseMatrix<double> df(q.size() + num_rigid_rods, q.size() + num_rigid_rods);
+        Eigen::SparseMatrix<double> df(q.size() + connectors_.size(), q.size() + connectors_.size());
         df.setFromTriplets(triplet_list.begin(), triplet_list.end());
 
         return df;
     };
 
-    Eigen::VectorXd initial_state(2 * particles_.size() + num_rigid_rods);
+    Eigen::VectorXd initial_state(2 * particles_.size() + connectors_.size());
     initial_state.segment(0, 2 * particles_.size()) = unconstrain_q;
-    initial_state.segment(2 * particles_.size(), num_rigid_rods) = Eigen::VectorXd::Zero(num_rigid_rods);
+    initial_state.segment(2 * particles_.size(), connectors_.size()) = Eigen::VectorXd::Zero(connectors_.size());
 
     Eigen::VectorXd state = newton_method(func, deriv, initial_state);
     constrain_q = state.segment(0, 2 * particles_.size());
     constrain_qdot = unconstrain_qdot + (constrain_q - unconstrain_q) / params_.timeStep;
 }
 
+/*
+    Compute the Lagrange multiplier method for the constraints
+    Construct the Lagrangian and solve for the equations of motion using Newton's method
+    Connectors that are not rigid rods have no constraint
+*/
 void lagrange_multiplier_method(const Eigen::VectorXd &q,
                                 Eigen::VectorXd &qdot,
                                 Eigen::VectorXd &lambda,
@@ -242,24 +259,24 @@ void lagrange_multiplier_method(const Eigen::VectorXd &q,
 {
     auto func = [&](Eigen::VectorXd lambda) -> Eigen::VectorXd
     {
-        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
-        return compute_constraint(input, lambda.size());
+        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q).transpose() * lambda);
+        return compute_constraint(input);
     };
 
     auto deriv = [&](Eigen::VectorXd lambda) -> Eigen::SparseMatrix<double>
     {
-        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
+        Eigen::VectorXd input = q + params_.timeStep * qdot + (pow(params_.timeStep, 2) * Minv) * (F + compute_constraint_deriv(q).transpose() * lambda);
 
         // Chain rule for the derivative of the constraint
-        Eigen::SparseMatrix<double> dx = pow(params_.timeStep, 2) * Minv * compute_constraint_deriv(q, lambda.size()).transpose();
-        Eigen::SparseMatrix<double> dgdx = 2 * compute_constraint_deriv(input, lambda.size());
+        Eigen::SparseMatrix<double> dx = pow(params_.timeStep, 2) * Minv * compute_constraint_deriv(q).transpose();
+        Eigen::SparseMatrix<double> dgdx = 2 * compute_constraint_deriv(input);
         Eigen::SparseMatrix<double> df = dgdx * dx;
 
         return df;
     };
 
     lambda = newton_method(func, deriv, lambda);
-    qdot = qdot + params_.timeStep * Minv * (F + compute_constraint_deriv(q, lambda.size()).transpose() * lambda);
+    qdot = qdot + params_.timeStep * Minv * (F + compute_constraint_deriv(q).transpose() * lambda);
 }
 
 void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::VectorXd &qdot)
@@ -282,6 +299,8 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Ve
     {
         penalty_method(q, F);
         qdot += params_.timeStep * Minv * F;
+
+        std::cout << "Penalty method\n";
         break;
     }
 
@@ -292,12 +311,16 @@ void numericalIntegration(Eigen::VectorXd &q, Eigen::VectorXd &lambda, Eigen::Ve
         Eigen::VectorXd constrain_q;
         Eigen::VectorXd constrain_qdot;
         step_project_method(q, qdot, Minv, constrain_q, constrain_qdot);
+
+        std::cout << "Step and project method\n";
         break;
     }
 
     case SimParameters::CH_LAGRANGEMULT:
     {
         lagrange_multiplier_method(q, qdot, lambda, Minv, F);
+
+        std::cout << "Lagrange multiplier method\n";
         break;
     }
 
