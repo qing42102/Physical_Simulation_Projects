@@ -1,3 +1,5 @@
+#include <iostream>
+
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 
@@ -57,35 +59,6 @@ void unbuildConfiguration(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot)
 }
 
 /*
-    Delete springs that are connected to a particle that is about to be deleted
-    @param particle_index Index of the particle to be deleted
- */
-void delete_unconnected_springs(int particle_index)
-{
-    std::vector<Connector *> new_connectors_;
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-    {
-        Spring *spring = dynamic_cast<Spring *>(*it);
-        // Delete springs connected to this particle
-        if (spring->p1 == particle_index || spring->p2 == particle_index)
-        {
-            delete spring;
-        }
-        // Keep the spring in the new list if it's not connected to the deleted particle
-        else
-        {
-            // Update the indices of the springs that are connected to particles with higher indices
-            if (spring->p1 > particle_index)
-                spring->p1--;
-            if (spring->p2 > particle_index)
-                spring->p2--;
-            new_connectors_.push_back(spring);
-        }
-    }
-    connectors_ = new_connectors_;
-}
-
-/*
     Calculate the distance between a point and an infinite line
     @param p The point
     @param q1 A point on the line
@@ -121,76 +94,133 @@ double point_to_finite_line_dist(const Eigen::Vector2d &p, const Eigen::Vector2d
 }
 
 /*
-    Delete springs that are too close to a saw
+    Delete particles that are offscreen or too close to a saw
+    @return A list of booleans indicating which particles are about to be deleted
 */
-void delete_sawed_springs()
+std::vector<bool> detect_particles_to_delete()
 {
-    std::vector<Connector *> new_connectors_;
-    for (std::vector<Connector *>::iterator it = connectors_.begin(); it != connectors_.end(); ++it)
-    {
-        Spring *spring = dynamic_cast<Spring *>(*it);
-        Eigen::Vector2d pos1 = particles_[spring->p1].pos;
-        Eigen::Vector2d pos2 = particles_[spring->p2].pos;
-
-        bool delete_spring = false;
-        for (std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
-        {
-            // Delete springs that are too close to a saw
-            // The distance between the saw's center and the line formed by the spring's endpoints is less than the saw's radius
-            double dist = point_to_finite_line_dist(saw->pos, pos1, pos2);
-            if (dist < saw->radius)
-            {
-                delete_spring = true;
-                break;
-            }
-        }
-
-        if (delete_spring)
-        {
-            delete spring;
-        }
-        // Keep the spring in the new list if it doesn't touch a saw
-        else
-        {
-            new_connectors_.push_back(spring);
-        }
-    }
-    connectors_ = new_connectors_;
-}
-
-/*
-    Delete particles that are too close to a saw
-*/
-void delete_sawed_particles()
-{
-    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
-
+    std::vector<bool> delete_particle(particles_.size(), false);
     for (uint i = 0; i < particles_.size(); i++)
     {
-        bool delete_particle = false;
         for (std::vector<Saw>::iterator it = saws_.begin(); it != saws_.end(); ++it)
         {
             // Delete this particle that is too close to a saw
             // The distance between the particle and the saw is less than the saw's radius
             if ((particles_[i].pos - it->pos).norm() < it->radius)
             {
-                delete_particle = true;
+                delete_particle[i] = true;
                 break;
             }
         }
 
-        if (delete_particle)
+        if (delete_particle[i])
+            continue;
+
+        // Delete particles that are offscreen
+        if (particles_[i].pos[1] < -1.0 ||
+            particles_[i].pos[1] > 1 ||
+            particles_[i].pos[0] < -2.0 ||
+            particles_[i].pos[0] > 2.0)
         {
-            delete_unconnected_springs(i);
+            delete_particle[i] = true;
         }
-        // Keep the particle in the new list if it doesn't touch a saw
+    }
+
+    return delete_particle;
+}
+
+/*
+    Delete connectors that are too close to a saw or connected to a particle that is about to be deleted
+    @param delete_particles A list of booleans indicating which particles are about to be deleted
+    @return A list of booleans indicating which connectors are about to be deleted
+*/
+std::vector<bool> detect_connectors_to_delete(const std::vector<bool> &delete_particles)
+{
+    std::vector<bool> delete_connector(connectors_.size(), false);
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        Eigen::Vector2d pos1 = particles_[connectors_[i]->p1].pos;
+        Eigen::Vector2d pos2 = particles_[connectors_[i]->p2].pos;
+        double maxx = std::max(pos1[0], pos2[0]);
+        double minx = std::min(pos1[0], pos2[0]);
+        double maxy = std::max(pos1[1], pos2[1]);
+        double miny = std::min(pos1[1], pos2[1]);
+
+        for (std::vector<Saw>::iterator saw = saws_.begin(); saw != saws_.end(); ++saw)
+        {
+            // Need to account for the saws that are horizontally or vertically aligned with the connector but not actually close to it
+            // The point_to_finite_line_dist function would return a small distance because it's measuring the perpendicular distance to the line
+            if (saw->pos[0] - saw->radius <= maxx &&
+                saw->pos[0] + saw->radius >= minx &&
+                saw->pos[1] - saw->radius <= maxy &&
+                saw->pos[1] + saw->radius >= miny)
+            {
+                // Delete connectors that are too close to a saw
+                // The distance between the saw's center and the line formed by the connector's endpoints is less than the saw's radius
+                double dist = point_to_finite_line_dist(saw->pos, pos1, pos2);
+                if (dist < saw->radius)
+                {
+                    delete_connector[i] = true;
+                    break;
+                }
+            }
+        }
+
+        if (delete_connector[i])
+            continue;
+
+        // Delete connectors that are connected to a particle that is about to be deleted
+        if (delete_particles[connectors_[i]->p1] || delete_particles[connectors_[i]->p2])
+        {
+            delete_connector[i] = true;
+        }
         else
+        {
+            // Update the indices of the particles that are not deleted to the range [0, particles_.size() - 1]
+            // The indices of the particles that are not deleted are reduced by the number of particles that are deleted before them
+            int p1_deletion = std::count(delete_particles.begin(), delete_particles.begin() + connectors_[i]->p1, true);
+            int p2_deletion = std::count(delete_particles.begin(), delete_particles.begin() + connectors_[i]->p2, true);
+
+            connectors_[i]->p1 -= p1_deletion;
+            connectors_[i]->p2 -= p2_deletion;
+        }
+    }
+
+    return delete_connector;
+}
+
+void delete_objects()
+{
+    std::vector<bool> delete_particles = detect_particles_to_delete();
+    std::vector<bool> delete_connectors = detect_connectors_to_delete(delete_particles);
+
+    // Keep the particle in a new list if it's not deleted
+    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
+    for (uint i = 0; i < particles_.size(); i++)
+    {
+        if (!delete_particles[i])
         {
             new_particles_.push_back(particles_[i]);
         }
     }
-
     particles_ = new_particles_;
+
+    // Keep the connector in a new list if it's not deleted
+    std::vector<Connector *> new_connectors_;
+    for (uint i = 0; i < connectors_.size(); i++)
+    {
+        if (!delete_connectors[i])
+        {
+            new_connectors_.push_back(connectors_[i]);
+        }
+        else
+        {
+            delete connectors_[i];
+        }
+    }
+    connectors_ = new_connectors_;
+
+    std::cout << "Delete sawed objects\n";
 }
 
 void pruneOverstrainedSprings()
@@ -207,7 +237,7 @@ void pruneOverstrainedSprings()
         double dist = (pos1 - pos2).norm();
         double strain = (dist - spring->restlen) / spring->restlen;
 
-        if (strain > params_.maxSpringStrain)
+        if (spring->canSnap && strain > params_.maxSpringStrain)
         {
             delete spring;
         }
@@ -219,28 +249,4 @@ void pruneOverstrainedSprings()
     }
 
     connectors_ = new_connectors_;
-}
-
-/*
-    Delete particles that are offscreen
-*/
-void delete_offscreen_particles()
-{
-    std::vector<Particle, Eigen::aligned_allocator<Particle>> new_particles_;
-
-    for (uint i = 0; i < particles_.size(); i++)
-    {
-        // Delete particles that are offscreen
-        if (particles_[i].pos[1] < -1.0 || particles_[i].pos[1] > 1 || particles_[i].pos[0] < -2.0 || particles_[i].pos[0] > 2.0)
-        {
-            delete_unconnected_springs(i);
-        }
-        // Keep the particle in a new list if it's not offscreen
-        else
-        {
-            new_particles_.push_back(particles_[i]);
-        }
-    }
-
-    particles_ = new_particles_;
 }
