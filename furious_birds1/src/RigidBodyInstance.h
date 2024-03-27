@@ -20,11 +20,13 @@ public:
     Eigen::Vector3d w;
 
     double density;
-    
-    const RigidBodyTemplate &getTemplate() const {return rbtemplate_;}
-    
+
+    const RigidBodyTemplate &getTemplate() const { return rbtemplate_; }
+
 private:
     const RigidBodyTemplate &rbtemplate_;
 };
+
+extern std::vector<RigidBodyInstance *> bodies_;
 
 #endif // RIGIDBODYINSTANCE_H

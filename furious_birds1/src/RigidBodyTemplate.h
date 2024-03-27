@@ -4,6 +4,7 @@
 #include <string>
 #include <Eigen/Core>
 #include <set>
+#include <vector>
 
 class SignedDistanceField;
 
@@ -13,12 +14,12 @@ public:
     RigidBodyTemplate(const std::string &meshFilename, double scale);
     ~RigidBodyTemplate();
 
-    double getVolume() const {return volume_;}
-    const Eigen::Matrix3d getInertiaTensor() const {return inertiaTensor_;}    
+    double getVolume() const { return volume_; }
+    const Eigen::Matrix3d getInertiaTensor() const { return inertiaTensor_; }
 
-    double getBoundingRadius() const {return radius_;}
-    const Eigen::MatrixX3d &getVerts() const {return V;}
-    const Eigen::MatrixX3i &getFaces() const {return F;}       
+    double getBoundingRadius() const { return radius_; }
+    const Eigen::MatrixX3d &getVerts() const { return V; }
+    const Eigen::MatrixX3i &getFaces() const { return F; }
 
 private:
     RigidBodyTemplate(const RigidBodyTemplate &other) = delete;
@@ -29,13 +30,15 @@ private:
     void computeVolume();
     Eigen::Vector3d computeCenterOfMass();
     void computeInertiaTensor();
-    
+
     Eigen::MatrixX3d V;
     Eigen::MatrixX3i F;
-    
+
     double volume_;
     double radius_;
-    Eigen::Matrix3d inertiaTensor_;    
+    Eigen::Matrix3d inertiaTensor_;
 };
+
+extern std::vector<RigidBodyTemplate *> templates_;
 
 #endif // RIGIDBODYTEMPLATE_H

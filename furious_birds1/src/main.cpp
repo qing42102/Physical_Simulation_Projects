@@ -23,8 +23,8 @@ double time_;
 SimParameters params_;
 std::string sceneFile_;
 
-std::vector<RigidBodyTemplate*> templates_;
-std::vector<RigidBodyInstance*> bodies_;
+std::vector<RigidBodyTemplate *> templates_;
+std::vector<RigidBodyInstance *> bodies_;
 
 Eigen::MatrixXd renderQ;
 Eigen::MatrixXi renderF;
@@ -33,7 +33,7 @@ void updateRenderGeometry()
 {
     int totverts = 0;
     int totfaces = 0;
-    for (RigidBodyInstance* rbi : bodies_)
+    for (RigidBodyInstance *rbi : bodies_)
     {
         totverts += rbi->getTemplate().getVerts().rows();
         totfaces += rbi->getTemplate().getFaces().rows();
@@ -42,7 +42,7 @@ void updateRenderGeometry()
     renderF.resize(totfaces, 3);
     int voffset = 0;
     int foffset = 0;
-    for (RigidBodyInstance* rbi : bodies_)
+    for (RigidBodyInstance *rbi : bodies_)
     {
         int nverts = rbi->getTemplate().getVerts().rows();
         for (int i = 0; i < nverts; i++)
@@ -62,9 +62,9 @@ void updateRenderGeometry()
 
 void loadScene()
 {
-    for (RigidBodyInstance* rbi : bodies_)
+    for (RigidBodyInstance *rbi : bodies_)
         delete rbi;
-    for (RigidBodyTemplate* rbt : templates_)
+    for (RigidBodyTemplate *rbt : templates_)
         delete rbt;
     bodies_.clear();
     templates_.clear();
@@ -88,7 +88,6 @@ void loadScene()
         }
     }
 
-
     int nbodies;
     ifs >> nbodies;
     for (int body = 0; body < nbodies; body++)
@@ -98,7 +97,7 @@ void loadScene()
         meshname = prefix + std::string("meshes/") + meshname;
         double scale;
         ifs >> scale;
-        RigidBodyTemplate* rbt = new RigidBodyTemplate(meshname, scale);
+        RigidBodyTemplate *rbt = new RigidBodyTemplate(meshname, scale);
         double rho;
         ifs >> rho;
         Eigen::Vector3d c, theta, cvel, w;
@@ -110,7 +109,7 @@ void loadScene()
             ifs >> cvel[i];
         for (int i = 0; i < 3; i++)
             ifs >> w[i];
-        RigidBodyInstance* rbi = new RigidBodyInstance(*rbt, c, theta, cvel, w, rho);
+        RigidBodyInstance *rbi = new RigidBodyInstance(*rbt, c, theta, cvel, w, rho);
         templates_.push_back(rbt);
         bodies_.push_back(rbi);
     }
@@ -123,13 +122,11 @@ void initSimulation()
     updateRenderGeometry();
 }
 
-
 void simulateOneStep()
 {
     time_ += params_.timeStep;
 
     // TODO: Gather DOFs, compute forces, integrate time, write DOFs back to rigid bodies
-
 }
 
 void callback()
@@ -152,7 +149,7 @@ void callback()
         {
             running_ = false;
             initSimulation();
-        }        
+        }
     }
     if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -173,41 +170,40 @@ void callback()
     {
         ImGui::Checkbox("Gravity Enabled", &params_.gravityEnabled);
         ImGui::InputDouble("Gravity G", &params_.gravityG);
-    }    
+    }
 
     ImGui::End();
 }
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-  polyscope::view::setWindowSize(1600, 800);
-  polyscope::options::buildGui = false;
-  polyscope::options::openImGuiWindowForUserCallback = false;
-  polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
+    polyscope::view::setWindowSize(1600, 800);
+    polyscope::options::buildGui = false;
+    polyscope::options::openImGuiWindowForUserCallback = false;
+    polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
 
-  polyscope::options::autocenterStructures = false;
-  polyscope::options::autoscaleStructures = false;
-  polyscope::options::maxFPS = -1;
+    polyscope::options::autocenterStructures = false;
+    polyscope::options::autoscaleStructures = false;
+    polyscope::options::maxFPS = -1;
 
-  sceneFile_ = "box.scn";
+    sceneFile_ = "box.scn";
 
-  initSimulation();
+    initSimulation();
 
-  polyscope::init();
+    polyscope::init();
 
-  polyscope::state::userCallback = callback;
+    polyscope::state::userCallback = callback;
 
-  while (!polyscope::render::engine->windowRequestsClose())
-  {
-      if (running_)
-          simulateOneStep();
-      updateRenderGeometry();
-      auto * surf = polyscope::registerSurfaceMesh("Bodies", renderQ, renderF);
-      surf->setTransparency(0.9);      
+    while (!polyscope::render::engine->windowRequestsClose())
+    {
+        if (running_)
+            simulateOneStep();
+        updateRenderGeometry();
+        auto *surf = polyscope::registerSurfaceMesh("Bodies", renderQ, renderF);
+        surf->setTransparency(0.9);
 
-      polyscope::frameTick();
-  }
+        polyscope::frameTick();
+    }
 
-  return 0;
+    return 0;
 }
-

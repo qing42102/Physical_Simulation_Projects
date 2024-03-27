@@ -21,4 +21,6 @@ struct SimParameters
     double gravityG;
 };
 
+extern SimParameters params_;
+
 #endif
