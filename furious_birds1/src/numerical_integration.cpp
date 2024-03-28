@@ -55,6 +55,13 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     return x;
 }
 
-void numericalIntegration()
+void numericalIntegration(Eigen::VectorXd &trans_pos,
+                          Eigen::VectorXd &trans_vel,
+                          Eigen::VectorXd &angle,
+                          Eigen::VectorXd &angle_vel)
 {
+    Eigen::VectorXd F;
+    Eigen::SparseMatrix<double> H;
+
+    computeForceAndHessian(trans_pos, trans_vel, angle, angle_vel, F, H);
 }

@@ -11,11 +11,16 @@ void processGravityForce(Eigen::VectorXd &F)
 {
 }
 
-void computeForceAndHessian(const Eigen::VectorXd &q, const Eigen::VectorXd &qprev, Eigen::VectorXd &F, Eigen::SparseMatrix<double> &H)
+void computeForceAndHessian(const Eigen::VectorXd &trans_pos,
+                            const Eigen::VectorXd &trans_vel,
+                            const Eigen::VectorXd &angle,
+                            const Eigen::VectorXd &angle_vel,
+                            Eigen::VectorXd &F,
+                            Eigen::SparseMatrix<double> &H)
 {
-    F.resize(q.size());
+    F.resize(trans_pos.size());
     F.setZero();
-    H.resize(q.size(), q.size());
+    H.resize(trans_pos.size(), trans_pos.size());
     H.setZero();
 
     std::vector<Eigen::Triplet<double>> Hcoeffs;
