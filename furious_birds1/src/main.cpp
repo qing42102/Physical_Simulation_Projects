@@ -127,8 +127,6 @@ void initSimulation()
 
 void simulateOneStep()
 {
-    // TODO: Gather DOFs, compute forces, integrate time, write DOFs back to rigid bodies
-
     system("clear");
 
     // Create configurational vectors

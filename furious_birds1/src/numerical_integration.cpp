@@ -29,15 +29,15 @@ void computeMassInverse(Eigen::DiagonalMatrix<double, Eigen::Dynamic> &Minv)
     @param initial_guess the initial guess for the root
     @returns the root of the function
 */
-Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> func,
-                              std::function<Eigen::SparseMatrix<double>(Eigen::VectorXd)> deriv_func,
-                              const Eigen::VectorXd &initial_guess)
+Eigen::Vector3d newton_method(std::function<Eigen::Vector3d(Eigen::Vector3d)> func,
+                              std::function<Eigen::Matrix3d(Eigen::Vector3d)> deriv_func,
+                              const Eigen::Vector3d &initial_guess)
 {
-    Eigen::VectorXd x = initial_guess;
+    Eigen::Vector3d x = initial_guess;
 
     for (int i = 0; i < params_.NewtonMaxIters; i++)
     {
-        Eigen::VectorXd f_val = func(x);
+        Eigen::Vector3d f_val = func(x);
 
         // Check for convergence
         if (f_val.norm() < params_.NewtonTolerance)
@@ -46,17 +46,11 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
             break;
         }
 
-        Eigen::SparseMatrix<double> deriv_val = deriv_func(x);
+        Eigen::Matrix3d deriv_val = deriv_func(x);
 
         // Solve [df] (x_{i+1} - x_i) = -f(x_i)
-        Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-        solver.compute(deriv_val);
-        if (solver.info() != Eigen::Success)
-        {
-            std::cerr << "Decomposition failed\n";
-            exit(1);
-        }
-        Eigen::VectorXd diff_x = solver.solve(-f_val);
+        Eigen::ColPivHouseholderQR<Eigen::Matrix3d> solver(deriv_val);
+        Eigen::Vector3d diff_x = solver.solve(-f_val);
         if (solver.info() != Eigen::Success)
         {
             std::cerr << "Solving failed\n";
@@ -73,7 +67,7 @@ Eigen::VectorXd newton_method(std::function<Eigen::VectorXd(Eigen::VectorXd)> fu
     \text{rot} (\theta^i) \text{rot} (h \omega^i) = \text{rot} (\theta^{i+1})
 */
 void update_angle(Eigen::VectorXd &angle,
-                  Eigen::VectorXd &angle_vel)
+                  const Eigen::VectorXd &angle_vel)
 {
     for (uint i = 0; i < bodies_.size(); i++)
     {
@@ -85,6 +79,54 @@ void update_angle(Eigen::VectorXd &angle,
         Eigen::Vector3d new_angle = VectorMath::axisAngle(rotation_mat * rotation_mat_change);
 
         angle.segment(3 * i, 3) = new_angle;
+    }
+}
+
+/*
+    Compute the update for the angular velocity using the formula
+    -\rho (\omega^{i+1})^T \mathbf{M}_I \mathbf{T}(-h \omega^{i+1})^{-1}
+        + \rho (\omega^i)^T \mathbf{M}_I \mathbf{T}(h \omega^i)^{-1}
+        - h [d_{\theta} V(\mathbf{c}^{i+1}, \theta^{i+1})] \mathbf{T}(\theta^{i+1})^{-1}
+
+    Solves for the angular velocity using Newton's method
+*/
+void update_angle_vel(const Eigen::VectorXd &angle,
+                      Eigen::VectorXd &angle_vel,
+                      const Eigen::VectorXd &F)
+{
+    for (uint i = 0; i < bodies_.size(); i++)
+    {
+        Eigen::Vector3d angle_i = angle.segment(3 * i, 3);
+        Eigen::Vector3d angle_vel_i = angle_vel.segment(3 * i, 3);
+
+        Eigen::Matrix3d inertia_tensor = bodies_[i]->density * bodies_[i]->getTemplate().getInertiaTensor();
+        Eigen::Matrix3d T1 = VectorMath::TMatrix(params_.timeStep * angle_vel_i);
+        Eigen::Matrix3d T2 = VectorMath::TMatrix(angle_i);
+
+        Eigen::Vector3d term1 = angle_vel_i.transpose() * inertia_tensor * T1.inverse();
+        Eigen::Vector3d term2 = params_.timeStep * F.segment(3 * i, 3).transpose() * T2.inverse();
+
+        // Lambda function for the angular velocity update and its derivative
+        auto func = [&](Eigen::Vector3d new_angle_vel) -> Eigen::Vector3d
+        {
+            Eigen::Matrix3d T3 = VectorMath::TMatrix(-params_.timeStep * new_angle_vel);
+            Eigen::Vector3d term3 = new_angle_vel.transpose() * inertia_tensor * T3.inverse();
+
+            return -term3 + term1 - term2;
+        };
+
+        // Note that the second derivative term is small and can be ignored
+        auto deriv = [&](Eigen::Vector3d new_angle_vel) -> Eigen::Matrix3d
+        {
+            Eigen::Matrix3d T3 = VectorMath::TMatrix(-params_.timeStep * new_angle_vel);
+
+            return -inertia_tensor * T3.inverse();
+        };
+
+        Eigen::Vector3d initial_state = angle_vel_i;
+        Eigen::Vector3d state = newton_method(func, deriv, initial_state);
+
+        angle_vel.segment(3 * i, 3) = state;
     }
 }
 
@@ -104,4 +146,8 @@ void numericalIntegration(Eigen::VectorXd &trans_pos,
     Eigen::DiagonalMatrix<double, Eigen::Dynamic> Minv;
     computeMassInverse(Minv);
     trans_vel = trans_vel - Minv * params_.timeStep * F;
+
+    update_angle_vel(angle, angle_vel, F);
+
+    std::cout << "Numerically integrate to update the position and velocity\n";
 }
