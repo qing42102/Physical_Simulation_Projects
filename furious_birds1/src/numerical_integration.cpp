@@ -16,7 +16,7 @@ void computeMassInverse(Eigen::DiagonalMatrix<double, Eigen::Dynamic> &Minv)
 
     for (uint i = 0; i < bodies_.size(); i++)
     {
-        float mass = bodies_[i]->getTemplate().getVolume() * bodies_[i]->density;
+        double mass = bodies_[i]->getTemplate().getVolume() * bodies_[i]->density;
 
         Minv.diagonal().segment(3 * i, 3) = Eigen::Vector3d::Constant(1.0 / mass);
     }
@@ -139,15 +139,14 @@ void numericalIntegration(Eigen::VectorXd &trans_pos,
 
     update_angle(angle, angle_vel);
 
-    Eigen::VectorXd F;
-    Eigen::SparseMatrix<double> H;
-    computeForceAndHessian(trans_pos, trans_vel, angle, angle_vel, F, H);
+    Eigen::VectorXd F_trans, F_angle;
+    computeForce(trans_pos, angle, F_trans, F_angle);
 
     Eigen::DiagonalMatrix<double, Eigen::Dynamic> Minv;
     computeMassInverse(Minv);
-    trans_vel = trans_vel - Minv * params_.timeStep * F;
+    trans_vel = trans_vel - Minv * params_.timeStep * F_trans;
 
-    update_angle_vel(angle, angle_vel, F);
+    update_angle_vel(angle, angle_vel, F_angle);
 
     std::cout << "Numerically integrate to update the position and velocity\n";
 }
