@@ -1,10 +1,12 @@
 #include "RigidBodyTemplate.h"
+#include "loadObjwithMaterial.h"
 #include <iostream>
 #include <igl/readOBJ.h>
 #include <Eigen/Dense>
 #include <fstream>
 #include <map>
 #include <Eigen/Sparse>
+
 
 using namespace std;
 using namespace Eigen;
@@ -13,11 +15,27 @@ RigidBodyTemplate::RigidBodyTemplate(const std::string &meshFilename, double sca
 {
     inertiaTensor_.setZero();
 
-    igl::readOBJ(meshFilename, V, F);
-
+    igl::readOBJ(meshFilename, V,TC,N,F,FTC,FN);
+    std::string mtl_file_path = meshFilename;
+    mtl_file_path.replace(mtl_file_path.length() - 3, 3, "mtl");
+    if (std::__fs::filesystem::exists(mtl_file_path)) {
+         material = parseMTL(mtl_file_path);
+    } else {
+        std::cout << "MTL file does not exist: " << mtl_file_path << std::endl;
+    }
     V *= scale;
 
     initialize();
+}
+
+void RigidBodyTemplate::populate_uv_coords(){
+    uv_coords.resize(FTC.rows() * 3, 2);
+    for (int i = 0; i < FTC.rows(); ++i) { // For each face
+        for (int j = 0; j < 3; ++j) { // For each vertex in the face
+            int tcIndex = FTC(i, j); // Get the texture coordinate index for this vertex
+            uv_coords.row(i * 3 + j) = TC.row(tcIndex); // Assign the UV coordinates
+        }
+    }    
 }
 
 RigidBodyTemplate::~RigidBodyTemplate()
@@ -26,6 +44,7 @@ RigidBodyTemplate::~RigidBodyTemplate()
 
 void RigidBodyTemplate::initialize()
 {
+    populate_uv_coords();
     computeVolume();
     Vector3d cm = computeCenterOfMass();
     for(int i=0; i<V.rows(); i++)

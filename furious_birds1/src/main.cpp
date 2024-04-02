@@ -4,6 +4,7 @@
 #include "polyscope/point_cloud.h"
 #include "polyscope/surface_mesh.h"
 
+
 #include <iostream>
 #include <unordered_set>
 #include <utility>
@@ -11,11 +12,13 @@
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 
+#include "loadObjwithMaterial.h"
 #include "SimParameters.h"
 #include "RigidBodyInstance.h"
 #include "RigidBodyTemplate.h"
 #include "VectorMath.h"
 #include <fstream>
+#include <glm/glm.hpp>
 #include "misc/cpp/imgui_stdlib.h"
 
 #include "numerical_integration.cpp"
@@ -95,12 +98,14 @@ void loadScene()
     ifs >> nbodies;
     for (int body = 0; body < nbodies; body++)
     {
-        std::string meshname;
+        std::string meshname, folder_path;
         ifs >> meshname;
         meshname = prefix + std::string("meshes/") + meshname;
+        folder_path = prefix + std::string("meshes/") + getPathFolderName(meshname);
         double scale;
         ifs >> scale;
         RigidBodyTemplate *rbt = new RigidBodyTemplate(meshname, scale);
+        rbt->folder_path = folder_path;
         double rho;
         ifs >> rho;
         Eigen::Vector3d c, theta, cvel, w;
@@ -199,7 +204,7 @@ int main(int argc, char **argv)
     polyscope::options::autoscaleStructures = false;
     polyscope::options::maxFPS = -1;
 
-    sceneFile_ = "box.scn";
+    sceneFile_ = "cb1.scn";
 
     initSimulation();
 
@@ -214,6 +219,21 @@ int main(int argc, char **argv)
         updateRenderGeometry();
         auto *surf = polyscope::registerSurfaceMesh("Bodies", renderQ, renderF);
         surf->setTransparency(0.9);
+        for (RigidBodyTemplate* rbt : templates_){
+            std::vector<glm::vec3> colorsTex;
+            if(!rbt->material.map_Kd.empty()){
+                int width, height;
+                std::string material_abs_path = rbt->folder_path+ "/" + rbt->material.map_Kd;
+                loadTextureImage(material_abs_path, colorsTex, width, height);
+                // Add UV coordinates as a parameterization quantity if not done
+                auto qParam = surf->addParameterizationQuantity("UV_0", rbt->getUVcoords());
+                // Add the texture image as a color quantity using the loaded image data
+                auto* texture = surf->addTextureColorQuantity("Texture_0", *qParam,
+                width, height, colorsTex, polyscope::ImageOrigin::UpperLeft);
+                texture->setEnabled(true);
+            }
+
+        }
 
         polyscope::frameTick();
     }

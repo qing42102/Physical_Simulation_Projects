@@ -20,7 +20,7 @@ set( CMAKE_EXPORT_COMPILE_COMMANDS 1 ) # Emit a compile flags file to support co
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   # using Clang (linux or apple) or GCC
   message("Using clang/gcc compiler flags")
-  SET(BASE_CXX_FLAGS "-std=c++11 -Wall -Wextra -g3")
+  SET(BASE_CXX_FLAGS "-std=c++17 -Wall -Wextra -g3")
   SET(DISABLED_WARNINGS " -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-deprecated-declarations -Wno-missing-braces")
   SET(TRACE_INCLUDES " -H -Wno-error=unused-command-line-argument")
 
@@ -75,12 +75,16 @@ add_executable(
         src/main.cpp
 	src/RigidBodyInstance.cpp
 	src/RigidBodyTemplate.cpp
+  src/loadObjwithMaterial.cpp
 	src/VectorMath.cpp
 	../universe_of_goo/deps/polyscope/deps/imgui/imgui/misc/cpp/imgui_stdlib.cpp
         )
 
 # Include settings
-target_include_directories(birds1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/libigl/include")
+target_include_directories(birds1 PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/libigl/include"
+"${CMAKE_CURRENT_SOURCE_DIR}/deps/stb"
+)
+
 
 # Link settings
 target_link_libraries(birds1 polyscope Eigen3::Eigen)
