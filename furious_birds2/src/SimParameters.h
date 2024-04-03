@@ -8,7 +8,7 @@ struct SimParameters
         timeStep = 0.001;
         NewtonMaxIters = 20;
         NewtonTolerance = 1e-8;
-        
+
         gravityEnabled = true;
         gravityG = 9.8;
         penaltyEnabled = true;
@@ -19,12 +19,14 @@ struct SimParameters
     double timeStep;
     double NewtonTolerance;
     int NewtonMaxIters;
-    
+
     bool gravityEnabled;
     double gravityG;
     bool penaltyEnabled;
     double penaltyStiffness;
     double coefficientOfRestitution;
 };
+
+extern SimParameters params_;
 
 #endif
