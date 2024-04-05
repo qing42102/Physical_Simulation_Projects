@@ -151,9 +151,19 @@ void initSimulation()
 
 void simulateOneStep()
 {
-    time_ += params_.timeStep;
+    system("clear");
 
-    // TODO: Gather DOFs, compute forces, integrate time, write DOFs back to rigid bodies
+    // Create configurational vectors
+    Eigen::VectorXd trans_pos, trans_vel, angle, angle_vel;
+    buildConfiguration(trans_pos, trans_vel, angle, angle_vel);
+    // Use them for one step of time integration
+    numericalIntegration(trans_pos, trans_vel, angle, angle_vel);
+    // Unpack the DOFs back into the particles for rendering
+    unbuildConfiguration(trans_pos, trans_vel, angle, angle_vel);
+
+    // Time advances
+    time_ += params_.timeStep;
+    std::cout << "Time: " << time_ << "\n";
 }
 
 void callback()

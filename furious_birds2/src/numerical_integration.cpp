@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 
 #include "forces.cpp"
+#include "collision.cpp"
 #include "SimParameters.h"
 #include "RigidBodyInstance.h"
 #include "RigidBodyTemplate.h"
@@ -141,6 +142,8 @@ void numericalIntegration(Eigen::VectorXd &trans_pos,
 
     Eigen::VectorXd F_trans, F_angle;
     computeForce(trans_pos, angle, F_trans, F_angle);
+
+    detect_collisions();
 
     Eigen::DiagonalMatrix<double, Eigen::Dynamic> Minv;
     computeMassInverse(Minv);

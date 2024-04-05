@@ -9,6 +9,11 @@
 
 void processGravityForce(const Eigen::VectorXd &trans_pos, Eigen::VectorXd &F)
 {
+    for (uint i = 0; i < bodies_.size(); i++)
+    {
+        double mass = bodies_[i]->getTemplate().getVolume() * bodies_[i]->density;
+        F(3 * i + 1) += params_.gravityG * mass;
+    }
 }
 
 void computeForce(const Eigen::VectorXd &trans_pos,
