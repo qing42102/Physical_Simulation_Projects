@@ -261,7 +261,19 @@ int main(int argc, char **argv)
             for (int i = 0; i < 3; i++)
                 launchDir[i] = look[i];
             // TODO: launch a bird
-            launch_ = false;
+            if(launch_){
+                Eigen::Vector3d c, theta, cvel, w;
+                double rho = 1.0;
+                c = launchPos;
+
+                cvel = launchDir.normalized() * launchVel;
+                theta = Eigen::Vector3d(0, -M_PI/2, 0);
+                w = Eigen::Vector3d(launchVel, 0, 0);
+                RigidBodyInstance* rbi = new RigidBodyInstance(*birdTemplate_, 
+                                                        c, theta, cvel, w, rho);
+                bodies_.push_back(rbi);
+                launch_ = false;
+            }
         }
 
         auto *surf = polyscope::registerSurfaceMesh("Bodies", renderQ, renderF);
