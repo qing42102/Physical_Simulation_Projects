@@ -144,6 +144,7 @@ void numericalIntegration(Eigen::VectorXd &trans_pos,
     computeForce(trans_pos, angle, F_trans, F_angle);
 
     std::vector<collision_data> all_collisions = detect_collisions(trans_pos, angle);
+    add_penalty_floor(trans_pos, trans_vel, angle, angle_vel, F_trans, F_angle);
 
     Eigen::DiagonalMatrix<double, Eigen::Dynamic> Minv;
     computeMassInverse(Minv);

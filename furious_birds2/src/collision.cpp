@@ -196,3 +196,122 @@ std::vector<collision_data> detect_collisions(const Eigen::VectorXd &trans_pos,
 
     return all_collisions;
 }
+
+/*
+    Constrain the vertex to lie above a ground plane at y = −1:
+    g(q) = 1 + p \hat y
+*/
+Eigen::VectorXd floor_constraint(const Eigen::Vector3d &trans_pos,
+                                 const Eigen::Vector3d &angle,
+                                 const RigidBodyInstance *body)
+{
+    Eigen::Matrix3d rotation = VectorMath::rotationMatrix(angle);
+    Eigen::MatrixX3d verts = body->getTemplate().getVerts();
+    Eigen::MatrixX3d verts_current_config = ((rotation * verts.transpose()).colwise() + trans_pos).transpose();
+
+    Eigen::VectorXd constraint = 1 + verts_current_config.col(1).array();
+
+    return constraint;
+}
+
+/*
+    Derivative of the floor constraint with respect to time, theta, and c
+*/
+void floor_constraint_deriv(const Eigen::Vector3d &trans_vel,
+                            const Eigen::Vector3d &angle,
+                            const Eigen::Vector3d &angle_vel,
+                            const RigidBodyInstance *body,
+                            Eigen::VectorXd &constraint_deriv_t,
+                            Eigen::MatrixX3d &constraint_deriv_theta,
+                            Eigen::MatrixX3d &constraint_deriv_c)
+{
+    Eigen::MatrixX3d verts = body->getTemplate().getVerts();
+    Eigen::Matrix3d rotation = VectorMath::rotationMatrix(angle);
+    Eigen::Matrix3d T = VectorMath::TMatrix(angle);
+    Eigen::Matrix3d cross_product = VectorMath::crossProductMatrix(angle_vel);
+
+    // Translation derivative is 1 in the y direction
+    constraint_deriv_c = Eigen::MatrixX3d::Zero(verts.rows(), 3);
+    constraint_deriv_c.col(1).array() = 1;
+
+    constraint_deriv_theta = Eigen::MatrixX3d::Zero(verts.rows(), 3);
+    for (int i = 0; i < verts.rows(); i++)
+    {
+        Eigen::Vector3d vert = verts.row(i).transpose();
+        Eigen::Matrix3d cross_product_vert = VectorMath::crossProductMatrix(vert);
+        Eigen::Matrix3d deriv = rotation * cross_product_vert * T;
+
+        // Only y component derivative
+        constraint_deriv_theta.row(i) = deriv.col(1);
+    }
+
+    // Only y component derivative
+    constraint_deriv_t = (rotation * cross_product * verts.transpose()).transpose().col(1);
+    constraint_deriv_t.array() += trans_vel(1);
+}
+
+void collision_constraint()
+{
+}
+
+void collision_constraint_deriv()
+{
+}
+
+/*
+    Add a penalty force if the body violates the floor constraint
+*/
+void add_penalty_floor(const Eigen::VectorXd &trans_pos,
+                       const Eigen::VectorXd &trans_vel,
+                       const Eigen::VectorXd &angle,
+                       const Eigen::VectorXd &angle_vel,
+                       Eigen::VectorXd &F_trans,
+                       Eigen::VectorXd &F_angle)
+{
+    for (uint i = 0; i < bodies_.size(); i++)
+    {
+        Eigen::VectorXd constraint = floor_constraint(trans_pos.segment(3 * i, 3),
+                                                      angle.segment(3 * i, 3),
+                                                      bodies_[i]);
+
+        Eigen::VectorXd constraint_deriv_t;
+        Eigen::MatrixX3d constraint_deriv_theta;
+        Eigen::MatrixX3d constraint_deriv_c;
+        floor_constraint_deriv(trans_vel.segment(3 * i, 3),
+                               angle.segment(3 * i, 3),
+                               angle_vel.segment(3 * i, 3),
+                               bodies_[i],
+                               constraint_deriv_t,
+                               constraint_deriv_theta,
+                               constraint_deriv_c);
+
+        assert(constraint.size() == constraint_deriv_t.size());
+        assert(constraint.size() == constraint_deriv_theta.rows());
+        assert(constraint.size() == constraint_deriv_c.rows());
+
+        // Check whether each vertex violates the constraint
+        // Add a penalty force to the rigid body for each vertex that violates the constraint
+        for (int j = 0; j < constraint.size(); j++)
+        {
+            if (constraint(j) < 0 && constraint_deriv_t(j) < 0)
+            {
+                F_trans.segment(3 * i, 3) += params_.penaltyStiffness * constraint(j) * constraint_deriv_c.row(j).transpose();
+                F_angle.segment(3 * i, 3) += params_.penaltyStiffness * constraint(j) * constraint_deriv_theta.row(j).transpose();
+            }
+            else if (constraint(j) < 0 && constraint_deriv_t(j) > 0)
+            {
+                F_trans.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(j) * constraint_deriv_c.row(j).transpose();
+                F_angle.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(j) * constraint_deriv_theta.row(j).transpose();
+            }
+        }
+    }
+}
+
+void add_penalty_collision(const Eigen::VectorXd &trans_pos,
+                           const Eigen::VectorXd &trans_vel,
+                           const Eigen::VectorXd &angle,
+                           const Eigen::VectorXd &angle_vel,
+                           Eigen::VectorXd &F_trans,
+                           Eigen::VectorXd &F_angle)
+{
+}
