@@ -265,7 +265,7 @@ void collision_constraint(      const uint start_idx,
     // -1
      
     for(uint j=0; j<pjs.size(); ++j){
-        constraints(start_idx + j) += pjs[j].signed_dist;
+        constraints(start_idx + j) = pjs[j].signed_dist;
     }
 
 }
@@ -307,13 +307,12 @@ void collision_constraint_deriv(
         Eigen::Vector3d trans_pos_j = trans_pos.segment(3 * body_j_idx, 3);
         Eigen::Matrix3d neg_rotation_j = VectorMath::rotationMatrix(-angle_j);
         Eigen::Matrix3d neg_cross_product_j = VectorMath::crossProductMatrix(-angle_vel_j);
-
-        constraint_deriv_t(st_idx + j) += -(neg_rotation_j * \
+        constraint_deriv_t(st_idx + j) = -(neg_rotation_j * \
         (rotation_i*cross_product_i*bar_vert_i + trans_vel_i - trans_vel_j) +\
         (neg_rotation_j*neg_cross_product_j)*(rotation_i*bar_vert_i + trans_pos_i - trans_pos_j)).dot(pjs[j].signed_dist_deriv);
         
-        constraint_deriv_c.row(st_idx + j) += (neg_rotation_j * pjs[j].signed_dist_deriv).transpose();
-        constraint_deriv_theta.row(st_idx + j) +=-((neg_rotation_j*\
+        constraint_deriv_c.row(st_idx + j) = (neg_rotation_j * pjs[j].signed_dist_deriv).transpose();
+        constraint_deriv_theta.row(st_idx + j) =-((neg_rotation_j*\
         (-rotation_i*cross_product_vert*T_i)) * pjs[j].signed_dist_deriv).transpose();
         
     }
