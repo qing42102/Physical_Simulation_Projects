@@ -253,26 +253,27 @@ void floor_constraint_deriv(const Eigen::Vector3d &trans_vel,
 /*
     signed distance field S(\theta_i, theta_j, c_i, c_j)
 */
-Eigen::VectorXd collision_constraint(const uint body_i_idx,
-                                const uint vertex_i_idx,
+void collision_constraint(      const uint start_idx,
                                 const Eigen::VectorXd &trans_pos,
                                 const Eigen::VectorXd &trans_vel,
                                 const Eigen::VectorXd &angle,
                                 const Eigen::VectorXd &angle_vel,
-                            std::vector<collision_point_data> &pjs){
+                            std::vector<collision_point_data> &pjs,
+                            Eigen::VectorXd &constraints
+                            ){
     // body_i has a size of num_bodies which represents the signed distance
     // -1
-    Eigen::VectorXd constraints = Eigen::VectorXd::Ones(pjs.size(), 1); 
+     
     for(uint j=0; j<pjs.size(); ++j){
-        constraints[j] = pjs[j].signed_dist;
+        constraints(start_idx + j) += pjs[j].signed_dist;
     }
-    return constraints;
 
 }
 
 void collision_constraint_deriv(
                                 const uint body_i_idx,
                                 const uint vertex_i_idx,
+                                const uint st_idx,
                                 const Eigen::VectorXd &trans_pos,
                                 const Eigen::VectorXd &trans_vel,
                                 const Eigen::VectorXd &angle,
@@ -291,11 +292,14 @@ void collision_constraint_deriv(
     Eigen::MatrixX3d verts = bodies_[body_i_idx]->getTemplate().getVerts();
     Eigen::Vector3d vert = verts.row(vertex_i_idx).transpose();
     Eigen::Matrix3d cross_product_vert = VectorMath::crossProductMatrix(vert);
-    constraint_deriv_c = Eigen::MatrixX3d::Zero(pjs.size(), 3);
+    
+    
+    // print size of these
     
     for(uint j=0; j < pjs.size(); ++j){
         // TODO: get body j id from pjs and the do the below
         int body_j_idx = pjs[j].collidied_body;
+        
         Eigen::Vector3d trans_vel_j = trans_vel.segment(3 * body_j_idx, 3);
         Eigen::Vector3d angle_j = angle.segment(3 * body_j_idx, 3);
         Eigen::Vector3d angle_vel_j = angle_vel.segment(3 * body_j_idx, 3);
@@ -305,15 +309,18 @@ void collision_constraint_deriv(
         //Eigen::Matrix3d cross_product_j = VectorMath::crossProductMatrix(angle_vel_j);
         Eigen::Matrix3d neg_cross_product_j = VectorMath::crossProductMatrix(-angle_vel_j);
         // std::cout << "inside derivative" << std::endl;
-        // constraint_deriv_t.row(body_i_idx) += neg_rotation_j * \
-        // (rotation_i*angle_vel_i*vert + trans_vel_i - trans_vel_j) +\
-        // (rotation_i*vert + trans_pos_i - trans_pos_j).transpose()*\
-        // neg_rotation_j*neg_cross_product_j;
+        // Eigen::Vector3d item = (neg_rotation_j * \
+        // (rotation_i*cross_product_i*vert + trans_vel_i - trans_vel_j) +\
+        // (neg_rotation_j*neg_cross_product_j)*(rotation_i*vert + trans_pos_i - trans_pos_j));
 
-        // constraint_deriv_theta.row(body_i_idx) += neg_rotation_j*\
-        // (-rotation_i*cross_product_vert*T_i);
-
-        constraint_deriv_c.row(body_i_idx) = -neg_rotation_j;
+        constraint_deriv_t(st_idx + j) += -(neg_rotation_j * \
+        (rotation_i*cross_product_i*vert + trans_vel_i - trans_vel_j) +\
+        (neg_rotation_j*neg_cross_product_j)*(rotation_i*vert + trans_pos_i - trans_pos_j)).dot(pjs[j].signed_dist_deriv);
+        
+        constraint_deriv_c.row(st_idx + j) += (neg_rotation_j * pjs[j].signed_dist_deriv).transpose();
+        constraint_deriv_theta.row(st_idx + j) +=-((neg_rotation_j*\
+        (-rotation_i*cross_product_vert*T_i)) * pjs[j].signed_dist_deriv).transpose();
+        
     }
 }
 
@@ -380,47 +387,58 @@ void add_penalty_collision(
     for(uint i = 0; i < all_collisions.size(); ++i){
             // i -> body_id
         auto myMap = all_collisions[i].collisions;
-       
-        
+        // collect number of collisions per body
+        int num_collisions_per_body = 0;
         for(auto it = myMap.begin(); it != myMap.end(); ++it){
-            
-            
-            Eigen::VectorXd constraint = collision_constraint(
-                                i,
-                                it->first,
+            num_collisions_per_body += (it->second).size();
+        }
+        Eigen::MatrixX3d constraint_deriv_c =  Eigen::MatrixX3d::Zero(
+                                                    num_collisions_per_body, 3);
+        Eigen::MatrixX3d constraint_deriv_theta = Eigen::MatrixX3d::Zero(
+                                                    num_collisions_per_body, 3);
+        Eigen::VectorXd constraint = Eigen::VectorXd::Zero(num_collisions_per_body, 1);
+        Eigen::VectorXd constraint_deriv_t = Eigen::VectorXd::Zero(num_collisions_per_body, 1);
+        int st_idx = 0;
+        for(auto it = myMap.begin(); it != myMap.end(); ++it){
+            collision_constraint(
+                                st_idx,
                                 trans_pos,
                                 trans_vel,
                                 angle,
                                 angle_vel,
-                                it->second);
-
-            // \bar p_i = vert
-            Eigen::VectorXd constraint_deriv_t;
-            Eigen::MatrixX3d constraint_deriv_theta_i;
-            Eigen::MatrixX3d constraint_deriv_c_i;
-            
-
+                                it->second, constraint);
             collision_constraint_deriv(
                                 i,
                                 it->first,
+                                st_idx,
                                 trans_pos,
                                 trans_vel,
                                 angle,
                                 angle_vel,
                                 it->second,
                                 constraint_deriv_t,
-                                constraint_deriv_theta_i,
-                                constraint_deriv_c_i);
-            
-
+                                constraint_deriv_theta,
+                                constraint_deriv_c);
+            st_idx += it->second.size();
+            }
+        // compute force applied on that body
+        if (myMap.size() > 0){
+            for (int j = 0; j < constraint.size(); j++){
+                if (constraint(j) < 0 && constraint_deriv_t(j) < 0)
+                {
+                    F_trans.segment(3 * i, 3) += params_.penaltyStiffness * constraint(j) * constraint_deriv_c.row(j).transpose();
+                    F_angle.segment(3 * i, 3) += params_.penaltyStiffness * constraint(j) * constraint_deriv_theta.row(j).transpose();
+                }
+                else if (constraint(j) < 0 && constraint_deriv_t(j) > 0)
+                {
+                    F_trans.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(j) * constraint_deriv_c.row(j).transpose();
+                    F_angle.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(j) * constraint_deriv_theta.row(j).transpose();
+                }
+           
             }
 
-        //     for(auto it = myMap.begin(); it != myMap.end(); ++it){
-        //         // collision_point_data -> set of all bodies vertex j collided with
-        //         // compute force
-                
-        // }
 
-
+        }
+        
     }
 }
