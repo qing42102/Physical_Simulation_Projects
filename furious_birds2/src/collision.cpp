@@ -291,8 +291,8 @@ void collision_constraint_deriv(
     Eigen::Matrix3d cross_product_i = VectorMath::crossProductMatrix(angle_vel_i);
     Eigen::MatrixX3d verts = bodies_[body_i_idx]->getTemplate().getVerts();
     Eigen::Vector3d vert = verts.row(vertex_i_idx).transpose();
-    Eigen::Vector3d bar_vert_i = rotation_i*vert + trans_pos_i;
-    Eigen::Matrix3d cross_product_vert = VectorMath::crossProductMatrix(bar_vert_i);
+    // Eigen::Vector3d bar_vert_i = rotation_i*vert + trans_pos_i;
+    Eigen::Matrix3d cross_product_vert = VectorMath::crossProductMatrix(vert);
     
     
     // print size of these
@@ -307,14 +307,14 @@ void collision_constraint_deriv(
         Eigen::Vector3d trans_pos_j = trans_pos.segment(3 * body_j_idx, 3);
         Eigen::Matrix3d neg_rotation_j = VectorMath::rotationMatrix(-angle_j);
         Eigen::Matrix3d neg_cross_product_j = VectorMath::crossProductMatrix(-angle_vel_j);
-        constraint_deriv_t(st_idx + j) = -(neg_rotation_j * \
-        (rotation_i*cross_product_i*bar_vert_i + trans_vel_i - trans_vel_j) +\
-        (neg_rotation_j*neg_cross_product_j)*(rotation_i*bar_vert_i + trans_pos_i - trans_pos_j)).dot(pjs[j].signed_dist_deriv);
+        constraint_deriv_t(st_idx + j) = (neg_rotation_j * \
+        (rotation_i*cross_product_i*vert + trans_vel_i - trans_vel_j) +\
+        (neg_rotation_j*neg_cross_product_j)*(rotation_i*vert + trans_pos_i - trans_pos_j)).dot(pjs[j].signed_dist_deriv);
         
         constraint_deriv_c.row(st_idx + j) = (neg_rotation_j * pjs[j].signed_dist_deriv).transpose();
-        constraint_deriv_theta.row(st_idx + j) =-((neg_rotation_j*\
+        constraint_deriv_theta.row(st_idx + j) =((neg_rotation_j*\
         (-rotation_i*cross_product_vert*T_i)) * pjs[j].signed_dist_deriv).transpose();
-        
+        // here I have added extra negative signs for showing -negative gradient is going to be used for force
     }
 }
 
