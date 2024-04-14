@@ -24,12 +24,11 @@
 
 #include "args/args.hxx"
 #include "happly.h"
-#include "json/json.hpp"
+#include "nlohmann/json.hpp"
 
 #include "simple_dot_mesh_parser.h"
 #include "surface_mesh_io.h"
 
-#define GLM_ENABLE_EXPERIMENTAL
 #include "glm/gtx/string_cast.hpp"
 
 #include "stb_image.h"
@@ -769,15 +768,17 @@ void callback() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.MouseClicked[0]) {
       glm::vec2 screenCoords{io.MousePos.x, io.MousePos.y};
+      int xInd, yInd;
+      std::tie(xInd, yInd) = polyscope::view::screenCoordsToBufferInds(screenCoords);
 
       glm::vec3 worldRay = polyscope::view::screenCoordsToWorldRay(screenCoords);
       glm::vec3 worldPos = polyscope::view::screenCoordsToWorldPosition(screenCoords);
-      std::pair<polyscope::Structure*, size_t> pickPair =
-          polyscope::pick::evaluatePickQuery(screenCoords.x, screenCoords.y);
+      std::pair<polyscope::Structure*, size_t> pickPair = polyscope::pick::pickAtScreenCoords(screenCoords);
 
       std::cout << "Polyscope scene test click " << std::endl;
       std::cout << "    io.MousePos.x: " << io.MousePos.x << " io.MousePos.y: " << io.MousePos.y << std::endl;
       std::cout << "    screenCoords.x: " << screenCoords.x << " screenCoords.y: " << screenCoords.y << std::endl;
+      std::cout << "    bufferInd.x: " << xInd << " bufferInd.y: " << yInd << std::endl;
       std::cout << "    worldRay: ";
       polyscope::operator<<(std::cout, worldRay) << std::endl;
       std::cout << "    worldPos: ";

@@ -5,50 +5,51 @@ endif()
 
 SET(INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../include/polyscope/")
 
+# We need the shared openGL backend if either of these backends are enabled
+if(POLYSCOPE_BACKEND_OPENGL3_GLFW OR POLYSCOPE_BACKEND_OPENGL3_EGL)
+  SET(POLYSCOPE_BACKEND_OPENGL3 TRUE)
+  add_definitions(-DPOLYSCOPE_BACKEND_OPENGL3_ENABLED)
+else()
+  SET(POLYSCOPE_BACKEND_OPENGL3 FALSE)
+endif()
+
 # Lists that will be populated for the render backend
 
 # Add the main _engine file no matter what. All of the interesting parts are ifdef'd out, and this
 # allows us to resolve stubs.
 list (APPEND BACKEND_SRCS
-    render/opengl/gl_engine.cpp  
-    render/mock_opengl/mock_gl_engine.cpp  
+    render/opengl/gl_engine.cpp
+    render/opengl/gl_engine_glfw.cpp
+    render/opengl/gl_engine_egl.cpp
+    render/mock_opengl/mock_gl_engine.cpp
+    render/opengl/shaders/texture_draw_shaders.cpp
+    render/opengl/shaders/lighting_shaders.cpp
+    render/opengl/shaders/grid_shaders.cpp
+    render/opengl/shaders/ground_plane_shaders.cpp
+    render/opengl/shaders/gizmo_shaders.cpp
+    render/opengl/shaders/histogram_shaders.cpp
+    render/opengl/shaders/surface_mesh_shaders.cpp
+    render/opengl/shaders/volume_mesh_shaders.cpp
+    render/opengl/shaders/vector_shaders.cpp
+    render/opengl/shaders/sphere_shaders.cpp
+    render/opengl/shaders/ribbon_shaders.cpp
+    render/opengl/shaders/cylinder_shaders.cpp
+    render/opengl/shaders/rules.cpp
+    render/opengl/shaders/common.cpp
 )
 
-# Configure the render backend
+# Configure the render backend(s)
 if("${POLYSCOPE_BACKEND_OPENGL3_GLFW}")
   message("Polyscope backend openGL3_glfw enabled")
-  
-  list (APPEND BACKEND_SRCS
-    render/opengl/gl_engine.cpp  
-    render/opengl/shaders/texture_draw_shaders.cpp  
-    render/opengl/shaders/lighting_shaders.cpp  
-    render/opengl/shaders/grid_shaders.cpp  
-    render/opengl/shaders/ground_plane_shaders.cpp  
-    render/opengl/shaders/gizmo_shaders.cpp  
-    render/opengl/shaders/histogram_shaders.cpp  
-    render/opengl/shaders/surface_mesh_shaders.cpp  
-    render/opengl/shaders/volume_mesh_shaders.cpp  
-    render/opengl/shaders/vector_shaders.cpp  
-    render/opengl/shaders/sphere_shaders.cpp  
-    render/opengl/shaders/ribbon_shaders.cpp  
-    render/opengl/shaders/cylinder_shaders.cpp  
-    render/opengl/shaders/rules.cpp  
-    render/opengl/shaders/common.cpp  
-  )
 
   list(APPEND BACKEND_HEADERS
-    ${INCLUDE_ROOT}render/opengl/gl_engine.h
+    ${INCLUDE_ROOT}render/opengl/gl_engine_glfw.h
     ${INCLUDE_ROOT}render/opengl/shaders/common.h
-  )
-
-  list(APPEND BACKEND_INCLUDE_DIRS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../deps/glad/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../deps/glfw/include
   )
 
   # Link settings
   list(APPEND BACKEND_LIBS
-    glfw ${GLFW_LIBRARIES}
+    glfw
   )
 
   if(APPLE)
@@ -58,7 +59,7 @@ if("${POLYSCOPE_BACKEND_OPENGL3_GLFW}")
 
       # Apple is playing hardball and deprecating openGL... we'll cross that bridge when we come to it
       # Silence warnings about openGL deprecation
-      add_definitions(-DGL_SILENCE_DEPRECATION)  
+      add_definitions(-DGL_SILENCE_DEPRECATION)
 
       find_library(cocoa_library Cocoa)
       find_library(opengl_library OpenGL)
@@ -70,50 +71,87 @@ if("${POLYSCOPE_BACKEND_OPENGL3_GLFW}")
 
       list(APPEND BACKEND_LIBS glad)
   endif()
-      
-  add_definitions(-DPOLYSCOPE_BACKEND_OPENGL3_GLFW_ENABLED)  
+
+  add_definitions(-DPOLYSCOPE_BACKEND_OPENGL3_GLFW_ENABLED)
 endif()
-  
+
+## some logic to decide whether or not EGL is available and whether we want to build with it
+include(CheckIncludeFileCXX)
+CHECK_INCLUDE_FILE_CXX("EGL/egl.h" HAVE_EGL_LIB)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(IS_LINUX TRUE)
+else()
+  set(IS_LINUX FALSE)
+endif()
+
+if(POLYSCOPE_BACKEND_OPENGL3_EGL STREQUAL "AUTO")
+  if(IS_LINUX AND HAVE_EGL_LIB) # "AUTO" policy: only enable if we're on linux and EGL libs seem to be present
+    set(POLYSCOPE_BACKEND_OPENGL3_EGL ON)
+  else()
+    set(POLYSCOPE_BACKEND_OPENGL3_EGL OFF)
+  endif()
+elseif(POLYSCOPE_BACKEND_OPENGL3_EGL) # if "TRUE" (or "ON" or "YES" etc etc)
+  # sanity check that we can actually use the EGL backend
+  if(NOT IS_LINUX)
+    message(FATAL_ERROR "EGL backend is only supported on linux. Disable it with POLYSCOPE_BACKEND_OPENGL3_EGL=False")
+  endif()
+  if(NOT HAVE_EGL_LIB)
+    message(FATAL_ERROR "EGL backend requires EGL headers, but 'EGL/egl.h' was not found. On Ubuntu, try 'apt-get install libegl1-mesa-dev'")
+  endif()
+
+  # we should be good-to-go for EGL
+
+else()
+  # nothing to do, already disabled
+endif()
+
+
+
+
+if("${POLYSCOPE_BACKEND_OPENGL3_EGL}")
+  message("Polyscope backend openGL3_egl enabled")
+
+  # this only supports headless rendering, and as of Mar 2024 headless rendering seems to only be available on nvidia drivers.
+
+  list(APPEND BACKEND_HEADERS
+    ${INCLUDE_ROOT}render/opengl/gl_engine_egl.h
+    ${INCLUDE_ROOT}render/opengl/shaders/common.h
+  )
+
+  if(APPLE)
+    message(FATAL_ERROR "Compiling EGL backed on APPLE is not supported. Set POLYSCOPE_BACKEND_OPENGL3_EGL=False")
+  else()
+
+    # On Windows/Linux, use the glad openGL loader
+    list(APPEND BACKEND_LIBS glad)
+
+    if(WIN32)
+      message(FATAL_ERROR "Compiling EGL backed on Windows is not supported. Set POLYSCOPE_BACKEND_OPENGL3_EGL=False")
+    else() # linux
+      # only linux is actually supported for EGL
+      list(APPEND BACKEND_LIBS EGL)
+    endif()
+
+  endif()
+
+  add_definitions(-DPOLYSCOPE_BACKEND_OPENGL3_EGL_ENABLED)
+endif()
+
 if("${POLYSCOPE_BACKEND_OPENGL_MOCK}")
   message("Polyscope backend openGL_mock enabled")
-  
-  list (APPEND BACKEND_SRCS
-    render/mock_opengl/mock_gl_engine.cpp  
-    render/opengl/shaders/texture_draw_shaders.cpp  
-    render/opengl/shaders/lighting_shaders.cpp  
-    render/opengl/shaders/grid_shaders.cpp  
-    render/opengl/shaders/ground_plane_shaders.cpp  
-    render/opengl/shaders/gizmo_shaders.cpp  
-    render/opengl/shaders/histogram_shaders.cpp  
-    render/opengl/shaders/surface_mesh_shaders.cpp  
-    render/opengl/shaders/volume_mesh_shaders.cpp  
-    render/opengl/shaders/vector_shaders.cpp  
-    render/opengl/shaders/sphere_shaders.cpp  
-    render/opengl/shaders/ribbon_shaders.cpp  
-    render/opengl/shaders/cylinder_shaders.cpp  
-    render/opengl/shaders/rules.cpp  
-    render/opengl/shaders/common.cpp  
-  )
 
   list(APPEND BACKEND_HEADERS
     ${INCLUDE_ROOT}render/mock_opengl/mock_gl_engine.h
     ${INCLUDE_ROOT}render/opengl/shaders/common.h
   )
 
-  list(APPEND BACKEND_INCLUDE_DIRS
-  )
-
-  # Link settings
-  list(APPEND BACKEND_LIBS
-  )
-
-add_definitions(-DPOLYSCOPE_BACKEND_OPENGL_MOCK_ENABLED)  
+  add_definitions(-DPOLYSCOPE_BACKEND_OPENGL_MOCK_ENABLED)
 endif()
 
 
 SET(SRCS
-  
-  # Core functionality 
+
+  # Core functionality
   polyscope.cpp
   options.cpp
   internal.cpp
@@ -127,16 +165,16 @@ SET(SRCS
   messages.cpp
   pick.cpp
   widget.cpp
-  
+
   # Rendering stuff
-  render/engine.cpp  
+  render/engine.cpp
   render/color_maps.cpp
   render/ground_plane.cpp
   render/materials.cpp
-  render/initialize_backend.cpp  
-  render/shader_builder.cpp  
-  render/managed_buffer.cpp  
-  render/templated_buffers.cpp  
+  render/initialize_backend.cpp
+  render/shader_builder.cpp
+  render/managed_buffer.cpp
+  render/templated_buffers.cpp
 
   # General utilities
   disjoint_sets.cpp
@@ -165,29 +203,29 @@ SET(SRCS
   surface_scalar_quantity.cpp
   surface_vector_quantity.cpp
   surface_parameterization_quantity.cpp
-  
+
   # Curve network
   curve_network.cpp
   curve_network_color_quantity.cpp
   curve_network_scalar_quantity.cpp
   curve_network_vector_quantity.cpp
-  
+
   # Volume mesh
   volume_mesh.cpp
   volume_mesh_color_quantity.cpp
   volume_mesh_scalar_quantity.cpp
   volume_mesh_vector_quantity.cpp
-  
+
   # Volume grid
   volume_grid.cpp
   volume_grid_scalar_quantity.cpp
-  
+
   # Camera view
   camera_view.cpp
-  
+
   # Simple triangle mesh
   simple_triangle_mesh.cpp
- 
+
   # Floating quantities
   floating_quantity_structure.cpp
   floating_quantity.cpp
@@ -200,12 +238,12 @@ SET(SRCS
   scalar_render_image_quantity.cpp
   raw_color_render_image_quantity.cpp
   raw_color_alpha_render_image_quantity.cpp
-  
+
   # Rendering utilities
   imgui_config.cpp
   fullscreen_artist.cpp
-  
-  ## Embedded binary data 
+
+  ## Embedded binary data
   render/bindata/bindata_font_lato_regular.cpp
   render/bindata/bindata_font_cousine_regular.cpp
   render/bindata/concrete_seamless.cpp
@@ -235,6 +273,7 @@ SET(HEADERS
   ${INCLUDE_ROOT}/color_quantity.h
   ${INCLUDE_ROOT}/color_quantity.ipp
   ${INCLUDE_ROOT}/combining_hash_functions.h
+  ${INCLUDE_ROOT}/context.h
   ${INCLUDE_ROOT}/curve_network.h
   ${INCLUDE_ROOT}/curve_network.ipp
   ${INCLUDE_ROOT}/curve_network_color_quantity.h
@@ -330,15 +369,7 @@ add_definitions(-DNOMINMAX)
 
 # Include settings
 target_include_directories(polyscope PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_include_directories(polyscope PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../deps/glm")
-#target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/args") # not used, polyscope generates no apps directly
-target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/happly")
-target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/MarchingCubeCpp")
-target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/json/include")
-target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/stb")
-target_include_directories(polyscope PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../deps/MarchingCubeCpp/include")
-target_include_directories(polyscope PRIVATE "${BACKEND_INCLUDE_DIRS}")
-        
+
 # Link settings
-target_link_libraries(polyscope PUBLIC imgui)
-target_link_libraries(polyscope PRIVATE "${BACKEND_LIBS}" stb)
+target_link_libraries(polyscope PUBLIC imgui glm::glm)
+target_link_libraries(polyscope PRIVATE "${BACKEND_LIBS}" stb nlohmann_json::nlohmann_json MarchingCube::MarchingCube)

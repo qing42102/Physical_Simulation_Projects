@@ -4,6 +4,7 @@
 
 #include <array>
 #include <string>
+#include <tuple>
 
 #include "polyscope/camera_parameters.h"
 #include "polyscope/types.h"
@@ -15,13 +16,11 @@
 #include "glm/gtc/constants.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
+#include "glm/gtx/dual_quaternion.hpp"
+#include "glm/gtx/norm.hpp" // necessary for dual_quaternion below
 #include "glm/mat4x4.hpp"
 #include "glm/vec3.hpp"
 #include "glm/vec4.hpp"
-#define GLM_ENABLE_EXPERIMENTAL
-#include "glm/gtx/dual_quaternion.hpp"
-#include "glm/gtx/norm.hpp" // necessary for dual_quaternion below
-#undef GLM_ENABLE_EXPERIMENTAL
 
 namespace polyscope {
 namespace view {
@@ -36,35 +35,38 @@ using polyscope::UpDir;
 
 // NOTE: users should use setters to set these if they exist, otherwise updates
 // may not be applied immediately.
-extern int bufferWidth;
-extern int bufferHeight;
-extern int windowWidth;
-extern int windowHeight;
-extern int initWindowPosX;
-extern int initWindowPosY;
-extern bool windowResizable;
-extern NavigateStyle style;
-extern UpDir upDir;
-extern FrontDir frontDir;
-extern double moveScale;
-extern double nearClipRatio;
-extern double farClipRatio;
-extern std::array<float, 4> bgColor;
+extern int& bufferWidth;
+extern int& bufferHeight;
+extern int& windowWidth;
+extern int& windowHeight;
+extern int& initWindowPosX;
+extern int& initWindowPosY;
+extern bool& windowResizable;
+extern NavigateStyle& style;
+extern UpDir& upDir;
+extern FrontDir& frontDir;
+extern double& moveScale;
+extern double& nearClipRatio;
+extern double& farClipRatio;
+extern std::array<float, 4>& bgColor;
 
 // Current view camera parameters
 // TODO deprecate these one day, and just use a CameraParameters member instead. But this would break existing code, so
 // for now we leave these as-is and wrap inputs/outputs to a CameraParameters
-extern glm::mat4x4 viewMat;
-extern double fov; // in the y direction
-extern ProjectionMode projectionMode;
+extern glm::mat4x4& viewMat;
+extern double& fov; // in the y direction
+extern ProjectionMode& projectionMode;
 
 // "Flying" view
-extern bool midflight;
-extern float flightStartTime;
-extern float flightEndTime;
-extern glm::dualquat flightTargetViewR, flightInitialViewR;
-extern glm::vec3 flightTargetViewT, flightInitialViewT;
-extern float flightTargetFov, flightInitialFov;
+extern bool& midflight;
+extern float& flightStartTime;
+extern float& flightEndTime;
+extern glm::dualquat& flightTargetViewR;
+extern glm::dualquat& flightInitialViewR;
+extern glm::vec3& flightTargetViewT;
+extern glm::vec3& flightInitialViewT;
+extern float& flightTargetFov;
+extern float& flightInitialFov;
 
 // Default values
 extern const double defaultNearClipRatio;
@@ -111,7 +113,7 @@ void getCameraFrame(glm::vec3& lookDir, glm::vec3& upDir, glm::vec3& rightDir);
 
 // Get world geometry corresponding to a screen pixel (e.g. from a mouse click)
 glm::vec3 screenCoordsToWorldRay(glm::vec2 screenCoords);
-glm::vec3 bufferCoordsToWorldRay(glm::vec2 screenCoords);
+glm::vec3 bufferCoordsToWorldRay(int xPos, int yPos);
 glm::vec3 screenCoordsToWorldPosition(glm::vec2 screenCoords); // queries the depth buffer to get full position
 
 // Flight-related
@@ -129,6 +131,7 @@ void setCameraFromJson(std::string jsonData, bool flyTo);
 // Other helpers
 std::string to_string(ProjectionMode mode);
 std::string to_string(NavigateStyle style);
+std::tuple<int, int> screenCoordsToBufferInds(glm::vec2 screenCoords);
 
 // Internal helpers. Should probably not be called in user code.
 void buildViewGui();
