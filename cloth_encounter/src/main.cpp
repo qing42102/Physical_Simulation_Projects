@@ -17,6 +17,9 @@
 #include <fstream>
 #include "misc/cpp/imgui_stdlib.h"
 
+#include "numerical_integration.cpp"
+#include "constraint.cpp"
+
 SimParameters params_;
 bool running_;
 
@@ -27,7 +30,6 @@ Eigen::MatrixXi F;
 
 std::vector<int> pinnedVerts;
 
-
 int clickedVertex;
 double clickedDepth;
 Eigen::Vector3d mousePos;
@@ -36,23 +38,22 @@ Eigen::MatrixXd renderQ;
 Eigen::MatrixXi renderF;
 
 void updateRenderGeometry()
-{            
+{
     renderQ = Q;
     renderF = F;
 }
 
-
 void initSimulation()
 {
-    if(!igl::readOBJ("meshes/rect-coarse.obj", origQ, F))
+    if (!igl::readOBJ("meshes/rect-coarse.obj", origQ, F))
         if (!igl::readOBJ("../meshes/rect-coarse.obj", origQ, F))
         {
             std::cerr << "Couldn't read mesh file" << std::endl;
             exit(-1);
         }
-    //mesh is tiny for some reason
+    // mesh is tiny for some reason
     origQ *= 50;
-    Q = origQ;  
+    Q = origQ;
     Qdot.resize(Q.rows(), 3);
     Qdot.setZero();
 
@@ -80,13 +81,11 @@ void initSimulation()
     }
     pinnedVerts.push_back(topleft);
     pinnedVerts.push_back(topright);
-    
 
     clickedVertex = -1;
-    
+
     updateRenderGeometry();
 }
-
 
 void simulateOneStep()
 {
@@ -113,7 +112,7 @@ void callback()
         {
             running_ = false;
             initSimulation();
-        }        
+        }
     }
     if (ImGui::CollapsingHeader("Simulation Options", ImGuiTreeNodeFlags_DefaultOpen))
     {
@@ -132,17 +131,19 @@ void callback()
         ImGui::InputDouble("Bending Weight", &params_.bendingWeight);
         ImGui::Checkbox("Pulling Enabled", &params_.pullingEnabled);
         ImGui::InputDouble("Pulling Weight", &params_.pullingWeight);
-    }    
+    }
 
     ImGui::End();
-    
-    ImGuiIO& io = ImGui::GetIO();
-    if (io.MouseReleased[0]) {
+
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.MouseReleased[0])
+    {
         clickedVertex = -1;
     }
-    else if (io.MouseClicked[0]) {
-        glm::vec2 screenCoords{ io.MousePos.x, io.MousePos.y };
-        std::pair<polyscope::Structure*, size_t> pickPair =
+    else if (io.MouseClicked[0])
+    {
+        glm::vec2 screenCoords{io.MousePos.x, io.MousePos.y};
+        std::pair<polyscope::Structure *, size_t> pickPair =
             polyscope::pick::evaluatePickQuery(screenCoords.x, screenCoords.y);
 
         if (pickPair.first != NULL)
@@ -196,7 +197,7 @@ void callback()
     }
     if (ImGui::IsMouseDragging(0))
     {
-        glm::vec2 screenCoords{ io.MousePos.x, io.MousePos.y };
+        glm::vec2 screenCoords{io.MousePos.x, io.MousePos.y};
         int xInd, yInd;
         std::tie(xInd, yInd) = polyscope::view::screenCoordsToBufferInds(screenCoords);
 
@@ -204,10 +205,10 @@ void callback()
         glm::mat4 viewInv = glm::inverse(view);
         glm::mat4 proj = polyscope::view::getCameraPerspectiveMatrix();
         glm::mat4 projInv = glm::inverse(proj);
-        
+
         // convert depth to world units
-        glm::vec2 screenPos{ screenCoords.x / static_cast<float>(polyscope::view::windowWidth),
-                            1.f - screenCoords.y / static_cast<float>(polyscope::view::windowHeight) };
+        glm::vec2 screenPos{screenCoords.x / static_cast<float>(polyscope::view::windowWidth),
+                            1.f - screenCoords.y / static_cast<float>(polyscope::view::windowHeight)};
         float z = clickedDepth;
         glm::vec4 clipPos = glm::vec4(screenPos * 2.0f - 1.0f, z, 1.0f);
         glm::vec4 viewPos = projInv * clipPos;
@@ -220,35 +221,34 @@ void callback()
     }
 }
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-  polyscope::view::setWindowSize(1600, 800);
-  polyscope::options::buildGui = false;
-  polyscope::options::openImGuiWindowForUserCallback = false;
-  polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
+    polyscope::view::setWindowSize(1600, 800);
+    polyscope::options::buildGui = false;
+    polyscope::options::openImGuiWindowForUserCallback = false;
+    polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::None;
 
-  polyscope::options::autocenterStructures = false;
-  polyscope::options::autoscaleStructures = false;
-  polyscope::options::maxFPS = -1;
-  polyscope::view::setNavigateStyle(polyscope::NavigateStyle::None);
-  initSimulation();
+    polyscope::options::autocenterStructures = false;
+    polyscope::options::autoscaleStructures = false;
+    polyscope::options::maxFPS = -1;
+    polyscope::view::setNavigateStyle(polyscope::NavigateStyle::None);
+    initSimulation();
 
-  polyscope::init();
+    polyscope::init();
 
-  polyscope::state::userCallback = callback;
+    polyscope::state::userCallback = callback;
 
-  while (!polyscope::render::engine->windowRequestsClose())
-  {
-      if (running_)
-          simulateOneStep();
-      updateRenderGeometry();
+    while (!polyscope::render::engine->windowRequestsClose())
+    {
+        if (running_)
+            simulateOneStep();
+        updateRenderGeometry();
 
-      auto * surf = polyscope::registerSurfaceMesh("Cloth", renderQ, renderF);
-      surf->setTransparency(0.9);      
+        auto *surf = polyscope::registerSurfaceMesh("Cloth", renderQ, renderF);
+        surf->setTransparency(0.9);
 
-      polyscope::frameTick();
-  }
+        polyscope::frameTick();
+    }
 
-  return 0;
+    return 0;
 }
-
