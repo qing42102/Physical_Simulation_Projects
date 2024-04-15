@@ -44,11 +44,4 @@ struct SimParameters
 
 extern SimParameters params_;
 
-extern Eigen::MatrixXd origQ;
-extern Eigen::MatrixXd Q;
-extern Eigen::MatrixXd Qdot;
-extern Eigen::MatrixXi F;
-
-extern std::vector<int> pinnedVerts;
-
 #endif

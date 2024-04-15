@@ -18,7 +18,6 @@
 #include "misc/cpp/imgui_stdlib.h"
 
 #include "numerical_integration.cpp"
-#include "constraint.cpp"
 
 SimParameters params_;
 bool running_;
@@ -89,7 +88,7 @@ void initSimulation()
 
 void simulateOneStep()
 {
-    // TODO: step time, apply gravity, enforce constraints
+    numericalIntegration(Q, Qdot, origQ, pinnedVerts);
 }
 
 void callback()
