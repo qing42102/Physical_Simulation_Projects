@@ -88,7 +88,7 @@ void initSimulation()
 
 void simulateOneStep()
 {
-    numericalIntegration(Q, Qdot, origQ, pinnedVerts);
+    numericalIntegration(Q, Qdot, origQ, F, pinnedVerts, clickedVertex, mousePos);
 }
 
 void callback()
