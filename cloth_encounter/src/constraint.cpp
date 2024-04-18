@@ -95,9 +95,9 @@ void compute_bending_constraint(Eigen::MatrixXd &Q, const Eigen::MatrixXd &origQ
     // F0 v1, v2, v3
     // F1 v1, v2, v4
     // if any 2 faces more than 2 vertices in common then they qualify for D
-    for(uint i=0; i< F.size(); ++i){
+    for(uint i=0; i< F.rows(); ++i){
         Eigen::Vector3i F0 = F.row(i);
-        for(uint j=i+1; j< F.size(); ++j){
+        for(uint j=i+1; j< F.rows(); ++j){
             Eigen::Vector3i F1 = F.row(j);
             // check if both have more than 2 vertices in common
             int vcnt = 0;
