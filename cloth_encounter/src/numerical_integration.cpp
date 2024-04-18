@@ -22,8 +22,7 @@ void project_constraints(Eigen::MatrixXd &Q,
     {
         if (params_.pinEnabled)
         {
-            Q_proj = compute_pin_constraint(Q, origQ, pinnedVerts);
-            Q = params_.pinWeight * Q_proj + (1 - params_.pinWeight) * Q;
+            compute_pin_constraint(Q, origQ, pinnedVerts);
             std::cout << "Project the pin constraints\n";
         }
 
@@ -31,30 +30,20 @@ void project_constraints(Eigen::MatrixXd &Q,
         {
             for (int j = 0; j < F.rows(); j++)
             {
-                int vert1_id = F(j, 0);
-                int vert2_id = F(j, 1);
-                int vert3_id = F(j, 2);
-
-                Q_proj = compute_stretch_constraint(Q, origQ, F.row(j));
-
-                Q.row(vert1_id) = params_.stretchWeight * Q_proj.row(0) + (1 - params_.stretchWeight) * Q.row(vert1_id);
-                Q.row(vert2_id) = params_.stretchWeight * Q_proj.row(1) + (1 - params_.stretchWeight) * Q.row(vert2_id);
-                Q.row(vert3_id) = params_.stretchWeight * Q_proj.row(2) + (1 - params_.stretchWeight) * Q.row(vert3_id);
+                compute_stretch_constraint(Q, origQ, F.row(j));
             }
             std::cout << "Project the strech constraints\n";
         }
 
         if (params_.bendingEnabled)
         {
-            Q_proj = compute_bending_constraint(Q);
-            Q = params_.bendingWeight * Q_proj + (1 - params_.bendingWeight) * Q;
+            compute_bending_constraint(Q);
             std::cout << "Project the bending constraints\n";
         }
 
         if (params_.pullingEnabled && clickedVertex != -1)
         {
-            Q_proj = compute_pull_constraint(Q, clickedVertex, mousePos);
-            Q = params_.pullingWeight * Q_proj + (1 - params_.pullingWeight) * Q;
+            compute_pull_constraint(Q, clickedVertex, mousePos);
             std::cout << "Project the mouse drag constraints\n";
         }
     }

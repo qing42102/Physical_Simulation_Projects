@@ -30,19 +30,19 @@ void compute_transformation(const Eigen::Matrix3d &triangle,
 /*
     Constraint for stopping the top-left and top-right corners of the cloth from moving.
 */
-Eigen::MatrixXd compute_pin_constraint(const Eigen::MatrixXd &Q,
-                                       const Eigen::MatrixXd &origQ,
-                                       const std::vector<int> &pinnedVerts)
+void compute_pin_constraint(Eigen::MatrixXd &Q,
+                            const Eigen::MatrixXd &origQ,
+                            const std::vector<int> &pinnedVerts)
 {
-    Eigen::MatrixXd Q_proj = Q;
     for (uint i = 0; i < pinnedVerts.size(); i++)
     {
         // Prevent the pinned vertex from moving by setting it to the original position
         int vert_id = pinnedVerts[i];
-        Q_proj.row(vert_id) = origQ.row(vert_id);
-    }
+        Eigen::Vector3d fixed_vert = origQ.row(vert_id);
 
-    return Q_proj;
+        // Linearly interpolate between the original and current position
+        Q.row(vert_id) = params_.pinWeight * fixed_vert.transpose() + (1 - params_.pinWeight) * Q.row(vert_id);
+    }
 }
 
 /*
@@ -51,9 +51,9 @@ Eigen::MatrixXd compute_pin_constraint(const Eigen::MatrixXd &Q,
     @param origQ: the original vertex positions
     @param F: the vertex id of the triangle to be restored
 */
-Eigen::MatrixXd compute_stretch_constraint(const Eigen::MatrixXd &Q,
-                                           const Eigen::MatrixXd &origQ,
-                                           const Eigen::Vector3i &F)
+void compute_stretch_constraint(Eigen::MatrixXd &Q,
+                                const Eigen::MatrixXd &origQ,
+                                const Eigen::Vector3i &F)
 {
     int vert1_id = F(0);
     int vert2_id = F(1);
@@ -79,28 +79,26 @@ Eigen::MatrixXd compute_stretch_constraint(const Eigen::MatrixXd &Q,
     Eigen::Matrix3d centered_orig_triangle = orig_triangle.rowwise() - orig_centroid.transpose();
     Eigen::Matrix3d transformed_orig_triangle = ((rotation * centered_orig_triangle.transpose()).colwise() + centroid).transpose();
 
-    Eigen::Matrix3d Q_proj = transformed_orig_triangle;
-
-    return Q_proj;
+    // Linearly interpolate between the original and current position
+    Q.row(vert1_id) = params_.stretchWeight * transformed_orig_triangle.row(0) + (1 - params_.stretchWeight) * Q.row(vert1_id);
+    Q.row(vert2_id) = params_.stretchWeight * transformed_orig_triangle.row(1) + (1 - params_.stretchWeight) * Q.row(vert2_id);
+    Q.row(vert3_id) = params_.stretchWeight * transformed_orig_triangle.row(2) + (1 - params_.stretchWeight) * Q.row(vert3_id);
 }
 
 /*
     The bending constraint restores a pair of triangles within a diamond to their original shape in the rest configuration.
 */
-Eigen::MatrixXd compute_bending_constraint(const Eigen::MatrixXd &Q)
+void compute_bending_constraint(Eigen::MatrixXd &Q)
 {
-    Eigen::MatrixXd Q_proj = Q;
-    return Q_proj;
 }
 
 /*
     Constraint for placing the dragged vertex at the current location of the mouse pointer.
 */
-Eigen::MatrixXd compute_pull_constraint(const Eigen::MatrixXd &Q,
-                                        const int &clickedVertex,
-                                        const Eigen::Vector3d &mousePos)
+void compute_pull_constraint(Eigen::MatrixXd &Q,
+                             const int &clickedVertex,
+                             const Eigen::Vector3d &mousePos)
 {
-    Eigen::MatrixXd Q_proj = Q;
-    Q_proj.row(clickedVertex) = mousePos;
-    return Q_proj;
+    // Linearly interpolate between the original and current position
+    Q.row(clickedVertex) = params_.pullingWeight * mousePos + (1 - params_.pullingWeight) * Q.row(clickedVertex);
 }
