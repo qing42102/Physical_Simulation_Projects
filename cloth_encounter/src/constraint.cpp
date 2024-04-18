@@ -12,12 +12,12 @@
 */
 void compute_transformation(const Eigen::Matrix3d &triangle,
                             const Eigen::Matrix3d &orig_triangle,
-                            Eigen::Vector3d &translation,
+                            Eigen::Vector3d &centroid,
+                            Eigen::Vector3d &orig_centroid,
                             Eigen::Matrix3d &rotation)
 {
-    Eigen::Vector3d centroid = triangle.colwise().mean();
-    Eigen::Vector3d orig_centroid = orig_triangle.colwise().mean();
-    translation = centroid - orig_centroid;
+    centroid = triangle.colwise().mean();
+    orig_centroid = orig_triangle.colwise().mean();
 
     Eigen::Matrix3d A = (triangle.rowwise() - centroid.transpose()).transpose();
     Eigen::Matrix3d B = (orig_triangle.rowwise() - orig_centroid.transpose()).transpose();
@@ -46,43 +46,40 @@ Eigen::MatrixXd compute_pin_constraint(const Eigen::MatrixXd &Q,
 }
 
 /*
-    The stretching constraint restores a triangle to its original shape in the rest configuration.
+    The stretching constraint restores a triangle in the current configuration to its original shape.
+    @param Q: the current vertex positions
+    @param origQ: the original vertex positions
+    @param F: the vertex id of the triangle to be restored
 */
 Eigen::MatrixXd compute_stretch_constraint(const Eigen::MatrixXd &Q,
                                            const Eigen::MatrixXd &origQ,
                                            const Eigen::Vector3i &F)
 {
-    Eigen::MatrixXd Q_proj = Q;
-
     int vert1_id = F(0);
     int vert2_id = F(1);
     int vert3_id = F(2);
 
     Eigen::Matrix3d triangle;
-    triangle << Q.row(vert1_id),
-        Q.row(vert2_id),
-        Q.row(vert3_id);
+    triangle.row(0) = Q.row(vert1_id);
+    triangle.row(1) = Q.row(vert2_id);
+    triangle.row(2) = Q.row(vert3_id);
 
     Eigen::Matrix3d orig_triangle;
-    orig_triangle << origQ.row(vert1_id),
-        origQ.row(vert2_id),
-        origQ.row(vert3_id);
+    orig_triangle.row(0) = origQ.row(vert1_id);
+    orig_triangle.row(1) = origQ.row(vert2_id);
+    orig_triangle.row(2) = origQ.row(vert3_id);
 
-    Eigen::Vector3d translation;
+    Eigen::Vector3d centroid;
+    Eigen::Vector3d orig_centroid;
     Eigen::Matrix3d rotation;
-    compute_transformation(triangle, orig_triangle, translation, rotation);
+    compute_transformation(triangle, orig_triangle, centroid, orig_centroid, rotation);
 
-    if (vert1_id == 2025 || vert2_id == 2025 || vert3_id == 2025)
-    {
-        std::cout << rotation << std::endl;
-        std::cout << translation << std::endl;
-    }
+    // Center the original triangle at the origin
+    // Then rotate and translate it back to the centroid of the current triangle
+    Eigen::Matrix3d centered_orig_triangle = orig_triangle.rowwise() - orig_centroid.transpose();
+    Eigen::Matrix3d transformed_orig_triangle = ((rotation * centered_orig_triangle.transpose()).colwise() + centroid).transpose();
 
-    // Eigen::Matrix3d transformed_triangle = ((rotation * orig_triangle.transpose()).colwise() + translation).transpose();
-    // Q_proj(Eigen::placeholders::all, {vert1_id, vert2_id, vert3_id}) = transformed_triangle;
-    Q_proj.row(vert1_id) = (rotation * origQ.row(vert1_id).transpose() + translation).transpose();
-    Q_proj.row(vert2_id) = (rotation * origQ.row(vert2_id).transpose() + translation).transpose();
-    Q_proj.row(vert3_id) = (rotation * origQ.row(vert3_id).transpose() + translation).transpose();
+    Eigen::Matrix3d Q_proj = transformed_orig_triangle;
 
     return Q_proj;
 }
@@ -99,8 +96,11 @@ Eigen::MatrixXd compute_bending_constraint(const Eigen::MatrixXd &Q)
 /*
     Constraint for placing the dragged vertex at the current location of the mouse pointer.
 */
-Eigen::MatrixXd compute_pull_constraint(const Eigen::MatrixXd &Q)
+Eigen::MatrixXd compute_pull_constraint(const Eigen::MatrixXd &Q,
+                                        const int &clickedVertex,
+                                        const Eigen::Vector3d &mousePos)
 {
     Eigen::MatrixXd Q_proj = Q;
+    Q_proj.row(clickedVertex) = mousePos;
     return Q_proj;
 }
