@@ -37,7 +37,7 @@ void project_constraints(Eigen::MatrixXd &Q,
 
         if (params_.bendingEnabled)
         {
-            compute_bending_constraint(Q);
+            compute_bending_constraint(Q, origQ, F);
             std::cout << "Project the bending constraints\n";
         }
 

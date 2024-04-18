@@ -88,8 +88,34 @@ void compute_stretch_constraint(Eigen::MatrixXd &Q,
 /*
     The bending constraint restores a pair of triangles within a diamond to their original shape in the rest configuration.
 */
-void compute_bending_constraint(Eigen::MatrixXd &Q)
+void compute_bending_constraint(Eigen::MatrixXd &Q, const Eigen::MatrixXd &origQ,
+                                const Eigen::MatrixXi &F)
 {
+    // get pairs of faces that have a common edge  
+    // F0 v1, v2, v3
+    // F1 v1, v2, v4
+    // if any 2 faces more than 2 vertices in common then they qualify for D
+    for(uint i=0; i< F.size(); ++i){
+        Eigen::Vector3i F0 = F.row(i);
+        for(uint j=i+1; j< F.size(); ++j){
+            Eigen::Vector3i F1 = F.row(j);
+            // check if both have more than 2 vertices in common
+            int vcnt = 0;
+            for(uint k=0; k<3; ++k){
+                if (F0(0) == F1(k) || F0(1) == F1(k) || F(2) == F1(k)){
+                    ++vcnt;
+                }
+            }
+            if(vcnt == 2){
+                compute_stretch_constraint(Q, origQ, F0);
+                compute_stretch_constraint(Q, origQ, F1);
+            }
+                
+        }
+    }
+    
+
+
 }
 
 /*
@@ -100,5 +126,5 @@ void compute_pull_constraint(Eigen::MatrixXd &Q,
                              const Eigen::Vector3d &mousePos)
 {
     // Linearly interpolate between the original and current position
-    Q.row(clickedVertex) = params_.pullingWeight * mousePos + (1 - params_.pullingWeight) * Q.row(clickedVertex);
+    Q.row(clickedVertex) = params_.pullingWeight * mousePos.transpose() + (1 - params_.pullingWeight) * Q.row(clickedVertex);
 }
