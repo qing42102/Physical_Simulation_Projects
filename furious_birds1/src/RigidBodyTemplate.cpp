@@ -6,7 +6,7 @@
 #include <fstream>
 #include <map>
 #include <Eigen/Sparse>
-
+#include <filesystem>
 
 using namespace std;
 using namespace Eigen;
@@ -18,7 +18,7 @@ RigidBodyTemplate::RigidBodyTemplate(const std::string &meshFilename, double sca
     igl::readOBJ(meshFilename, V,TC,N,F,FTC,FN);
     std::string mtl_file_path = meshFilename;
     mtl_file_path.replace(mtl_file_path.length() - 3, 3, "mtl");
-    if (std::__fs::filesystem::exists(mtl_file_path)) {
+    if (std::filesystem::exists(mtl_file_path)) {
          material = parseMTL(mtl_file_path);
     } else {
         std::cout << "MTL file does not exist: " << mtl_file_path << std::endl;
