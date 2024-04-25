@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <unordered_set>
+#include <vector>
 #include <utility>
 #include <deque>
 #include <Eigen/Sparse>
@@ -18,6 +19,7 @@
 #include "misc/cpp/imgui_stdlib.h"
 
 #include "numerical_integration.cpp"
+#include "constraint.cpp"
 
 SimParameters params_;
 bool running_;
@@ -86,9 +88,20 @@ void initSimulation()
     updateRenderGeometry();
 }
 
-void simulateOneStep()
+void simulateOneStep(const Eigen::MatrixX3d &orig_tri_centroids,
+                     const Eigen::MatrixX3d &orig_quad_centroids,
+                     const std::vector<adjacent_face> &adjacentFaces)
 {
-    numericalIntegration(Q, Qdot, origQ, F, pinnedVerts, clickedVertex, mousePos);
+    numericalIntegration(Q,
+                         Qdot,
+                         origQ,
+                         F,
+                         pinnedVerts,
+                         clickedVertex,
+                         mousePos,
+                         orig_tri_centroids,
+                         orig_quad_centroids,
+                         adjacentFaces);
 }
 
 void callback()
@@ -220,6 +233,48 @@ void callback()
     }
 }
 
+Eigen::MatrixX3d precompute_tri_centroid(const Eigen::MatrixXd &origQ, const Eigen::MatrixXi &F)
+{
+    Eigen::MatrixX3d centroids(F.rows(), 3);
+    for (int i = 0; i < F.rows(); i++)
+    {
+        int vert1_id = F(i, 0);
+        int vert2_id = F(i, 1);
+        int vert3_id = F(i, 2);
+
+        Eigen::Matrix3d orig_triangle;
+        orig_triangle.row(0) = origQ.row(vert1_id);
+        orig_triangle.row(1) = origQ.row(vert2_id);
+        orig_triangle.row(2) = origQ.row(vert3_id);
+
+        Eigen::Vector3d orig_centroid = calc_tri_centroid(orig_triangle);
+        centroids.row(i) = orig_centroid;
+    }
+
+    return centroids;
+}
+
+Eigen::MatrixX3d precompute_quad_centroid(const Eigen::MatrixXd &origQ,
+                                          const Eigen::MatrixXi &F,
+                                          const std::vector<adjacent_face> &adjacentFaces)
+{
+    Eigen::MatrixX3d centroids(adjacentFaces.size(), 3);
+    for (uint i = 0; i < adjacentFaces.size(); i++)
+    {
+        adjacent_face af = adjacentFaces[i];
+        Eigen::Matrix<double, 4, 3> orig_quad;
+        orig_quad.row(0) = origQ.row(af.shared_vert1);
+        orig_quad.row(1) = origQ.row(af.unique_vert1);
+        orig_quad.row(2) = origQ.row(af.shared_vert2);
+        orig_quad.row(3) = origQ.row(af.unique_vert2);
+
+        Eigen::Vector3d orig_centroid = calc_quad_centroid(orig_quad);
+        centroids.row(i) = orig_centroid;
+    }
+
+    return centroids;
+}
+
 int main(int argc, char **argv)
 {
     polyscope::view::setWindowSize(1600, 800);
@@ -237,10 +292,16 @@ int main(int argc, char **argv)
 
     polyscope::state::userCallback = callback;
 
+    // Precompute the centroids of the triangles and quads
+    // Precompute the adjacent faces for each quad
+    Eigen::MatrixX3d orig_tri_centroids = precompute_tri_centroid(origQ, F);
+    std::vector<adjacent_face> adjacentFaces = compute_adjacent_faces(F);
+    Eigen::MatrixX3d orig_quad_centroids = precompute_quad_centroid(origQ, F, adjacentFaces);
+
     while (!polyscope::render::engine->windowRequestsClose())
     {
         if (running_)
-            simulateOneStep();
+            simulateOneStep(orig_tri_centroids, orig_quad_centroids, adjacentFaces);
         updateRenderGeometry();
 
         auto *surf = polyscope::registerSurfaceMesh("Cloth", renderQ, renderF);

@@ -15,9 +15,11 @@ void project_constraints(Eigen::MatrixXd &Q,
                          const Eigen::MatrixXi &F,
                          const std::vector<int> &pinnedVerts,
                          const int &clickedVertex,
-                         const Eigen::Vector3d &mousePos)
+                         const Eigen::Vector3d &mousePos,
+                         const Eigen::MatrixX3d &orig_tri_centroids,
+                         const Eigen::MatrixX3d &orig_quad_centroids,
+                         const std::vector<adjacent_face> &adjacentFaces)
 {
-    Eigen::MatrixXd Q_proj;
     for (int i = 0; i < params_.constraintIters; i++)
     {
         if (params_.pinEnabled)
@@ -28,16 +30,13 @@ void project_constraints(Eigen::MatrixXd &Q,
 
         if (params_.stretchEnabled)
         {
-            for (int j = 0; j < F.rows(); j++)
-            {
-                compute_stretch_constraint(Q, origQ, F.row(j));
-            }
+            compute_stretch_constraint(Q, origQ, F, orig_tri_centroids);
             std::cout << "Project the strech constraints\n";
         }
 
         if (params_.bendingEnabled)
         {
-            compute_bending_constraint(Q, origQ, F);
+            compute_bending_constraint(Q, origQ, orig_quad_centroids, adjacentFaces);
             std::cout << "Project the bending constraints\n";
         }
 
@@ -51,6 +50,17 @@ void project_constraints(Eigen::MatrixXd &Q,
 
 /*
     Position-based dynamics integration
+
+    @param Q: The position of the vertices
+    @param Qdot: The velocity of the vertices
+    @param origQ: The original position of the vertices
+    @param F: The vertex index that define the faces of the mesh
+    @param pinnedVerts: The indices of the pinned vertices
+    @param clickedVertex: The index of the clicked vertex by the mouse
+    @param mousePos: The position of the dragged mouse
+    @param orig_tri_centroids: The original centroids of the triangles
+    @param orig_quad_centroids: The original centroids of the quads
+    @param adjacentFaces: The adjacent faces of the vertices
 */
 void numericalIntegration(Eigen::MatrixXd &Q,
                           Eigen::MatrixXd &Qdot,
@@ -58,12 +68,23 @@ void numericalIntegration(Eigen::MatrixXd &Q,
                           const Eigen::MatrixXi &F,
                           const std::vector<int> &pinnedVerts,
                           const int &clickedVertex,
-                          const Eigen::Vector3d &mousePos)
+                          const Eigen::Vector3d &mousePos,
+                          const Eigen::MatrixX3d &orig_tri_centroids,
+                          const Eigen::MatrixX3d &orig_quad_centroids,
+                          const std::vector<adjacent_face> &adjacentFaces)
 {
     Eigen::MatrixXd Q_old = Q;
     Q = Q + params_.timeStep * Qdot;
 
-    project_constraints(Q, origQ, F, pinnedVerts, clickedVertex, mousePos);
+    project_constraints(Q,
+                        origQ,
+                        F,
+                        pinnedVerts,
+                        clickedVertex,
+                        mousePos,
+                        orig_tri_centroids,
+                        orig_quad_centroids,
+                        adjacentFaces);
 
     Eigen::MatrixXd force;
     computeForce(Q, force);
