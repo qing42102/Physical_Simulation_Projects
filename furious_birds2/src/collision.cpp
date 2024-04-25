@@ -33,7 +33,7 @@ struct collision_point_data
 
 /*
     This struct stores all the collision data for a single body.
-    The collision data is stored as a hash map from vertex index to a vector of collisions with another body.
+    The collision data is stored as a hash map from the vertex index to a vector of collisions with another body.
 */
 struct collision_data
 {
@@ -106,6 +106,7 @@ bool bounding_box_overlap(const Eigen::MatrixXd &box1, const Eigen::MatrixXd &bo
     @param P: The vertices of the body
     @param C: The closest point on the surface of the colliding body to each vertex
     @param S: The signed distance from each vertex to the surface of the colliding body
+    @return The derivative of the signed distance function
 */
 Eigen::MatrixX3d signed_distance_deriv(Eigen::MatrixX3d P, Eigen::MatrixX3d C, Eigen::VectorXd S)
 {
@@ -172,7 +173,7 @@ void vertex_body_overlap(const Eigen::VectorXd &trans_pos,
 
 /*
     Detect collisions between all pairs of rigid bodies.
-    Returns a vector of collision_data structs for each body, where index i corresponds to body i.
+    @return A vector of collision_data structs for each body, where index i corresponds to body i.
 */
 std::vector<collision_data> detect_collisions(const Eigen::VectorXd &trans_pos,
                                               const Eigen::VectorXd &angle)
@@ -214,6 +215,7 @@ Eigen::VectorXd floor_constraint(const Eigen::Vector3d &trans_pos,
                                  const Eigen::Vector3d &angle,
                                  const RigidBodyInstance *body)
 {
+    // Rotate and translate the vertices to the current configuration
     Eigen::Matrix3d rotation = VectorMath::rotationMatrix(angle);
     Eigen::MatrixX3d verts = body->getTemplate().getVerts();
     Eigen::MatrixX3d verts_current_config = ((rotation * verts.transpose()).colwise() + trans_pos).transpose();
@@ -246,11 +248,11 @@ void floor_constraint_deriv(const Eigen::Vector3d &trans_vel,
         Eigen::Vector3d vert = verts.row(i).transpose();
         Eigen::Matrix3d deriv = VectorMath::DrotVector(angle, vert);
 
-        // Only y component derivative
+        // Derivative only has y component
         constraint_deriv_theta.row(i) = deriv.row(1);
     }
 
-    // Only y component derivative
+    // Derivative only has y component
     constraint_deriv_t = (VectorMath::DrotVector(angle, angle_vel) * verts.transpose()).transpose().col(1);
     constraint_deriv_t.array() += trans_vel(1);
 }
@@ -274,6 +276,11 @@ Eigen::VectorXd collision_constraint(const std::vector<collision_point_data> &ve
 
 /*
     The derivative of the collision constraint with respect to time, theta, and c
+    @param constraint_deriv_t: Derivative of the constraint with respect to time
+    @param constraint_deriv_theta_i: Derivative of the constraint with respect to theta_i
+    @param constraint_deriv_c_i: Derivative of the constraint with respect to c_i
+    @param constraint_deriv_theta_j: Derivative of the constraint with respect to theta_j
+    @param constraint_deriv_c_j: Derivative of the constraint with respect to c_j
 */
 void collision_constraint_deriv(const Eigen::VectorXd &trans_pos,
                                 const Eigen::VectorXd &trans_vel,
@@ -319,6 +326,7 @@ void collision_constraint_deriv(const Eigen::VectorXd &trans_pos,
         Eigen::Vector3d term6 = VectorMath::DrotVector(-angle_j, -angle_vel_j) * (term3 - trans_pos_j);
         constraint_deriv_t[k] = signed_dist_deriv.transpose() * (term5 + term6);
 
+        // Need the derivative of the constraint for both body i and j for each collision
         constraint_deriv_c_i.row(k) = (signed_dist_deriv.transpose() * rotation_j.transpose());
         constraint_deriv_c_j.row(k) = (signed_dist_deriv.transpose() * -rotation_j.transpose());
 
@@ -377,26 +385,29 @@ void add_penalty_floor(const Eigen::VectorXd &trans_pos,
     }
 }
 
-void add_penalty_collision(
-    const std::vector<collision_data> &all_collisions,
-    const Eigen::VectorXd &trans_pos,
-    const Eigen::VectorXd &trans_vel,
-    const Eigen::VectorXd &angle,
-    const Eigen::VectorXd &angle_vel,
-    Eigen::VectorXd &F_trans,
-    Eigen::VectorXd &F_angle)
+/*
+    Add a penalty force if the body collides with another body
+*/
+void add_penalty_collision(const std::vector<collision_data> &all_collisions,
+                           const Eigen::VectorXd &trans_pos,
+                           const Eigen::VectorXd &trans_vel,
+                           const Eigen::VectorXd &angle,
+                           const Eigen::VectorXd &angle_vel,
+                           Eigen::VectorXd &F_trans,
+                           Eigen::VectorXd &F_angle)
 {
     // i -> body_id
     for (uint i = 0; i < all_collisions.size(); ++i)
     {
         std::unordered_map<int, std::vector<collision_point_data>> collisions = all_collisions[i].collisions;
 
-        // Each vertex of the body
+        // Each vertex that is in collision
         for (auto it = collisions.begin(); it != collisions.end(); ++it)
         {
             std::vector<collision_point_data> &vert_collisions = it->second;
 
             int num_collisions = vert_collisions.size();
+            // Need the derivative of the constraint for both body i and j for each collision
             Eigen::MatrixX3d constraint_deriv_c_i = Eigen::MatrixX3d::Zero(num_collisions, 3);
             Eigen::MatrixX3d constraint_deriv_theta_i = Eigen::MatrixX3d::Zero(num_collisions, 3);
             Eigen::MatrixX3d constraint_deriv_c_j = Eigen::MatrixX3d::Zero(num_collisions, 3);
@@ -425,6 +436,7 @@ void add_penalty_collision(
 
                 if (constraint(k) < 0 && constraint_deriv_t(k) < 0)
                 {
+                    // Add a penlaty force for both body i and j
                     F_trans.segment(3 * i, 3) += params_.penaltyStiffness * constraint(k) * constraint_deriv_c_i.row(k).transpose();
                     F_angle.segment(3 * i, 3) += params_.penaltyStiffness * constraint(k) * constraint_deriv_theta_i.row(k).transpose();
 
@@ -433,6 +445,7 @@ void add_penalty_collision(
                 }
                 else if (constraint(k) < 0 && constraint_deriv_t(k) >= 0)
                 {
+                    // Add a penlaty force for both body i and j
                     F_trans.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(k) * constraint_deriv_c_i.row(k).transpose();
                     F_angle.segment(3 * i, 3) += params_.penaltyStiffness * params_.coefficientOfRestitution * constraint(k) * constraint_deriv_theta_i.row(k).transpose();
 
